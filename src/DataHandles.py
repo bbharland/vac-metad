@@ -3,10 +3,7 @@ from pathlib import Path
 import datetime
 import torch
 
-from .util import (
-    save_pickle,
-    load_pickle
-)
+from .util import save_pickle, load_pickle
 
 
 class DataHandles:
@@ -35,6 +32,7 @@ class DataHandles:
     Once instantiated, further new attributes can be assigned with
         save_and_assign_objects({'label': object, ...})
     """
+
     def __init__(self, working_dir, assign_labels=None):
         """Parameters
         ----------
@@ -49,16 +47,16 @@ class DataHandles:
         self.files = self._files_dict(self.working_dir)
 
         if assign_labels is None:
-            filenames = type(self).data_filenames
+            labels = [Path(filename).stem for filename in type(self).data_filenames]
         else:
-            filenames = [self.files[label].name for label in assign_labels]
+            labels = assign_labels
 
-        for filename in filenames:
-            self._assign_object(self.files[Path(filename).stem])
+        for label in labels:
+            self._assign_object(self.files[label])
 
     def _files_dict(self, working_dir):
-        """Return
-        ------
+        """Returns
+        -------
         files : dict[str: Path]
                 The dictionary containing all label: file pairs contained in
                 (child).data_filenames : list [str]
@@ -76,31 +74,36 @@ class DataHandles:
         return files
 
     def _assign_object(self, file):
-        """If the file containing the object exists, load it and assign it to an attribute.  If it does not, assign the attribute to None.
-        """
+        """If the file containing the object exists, load it and assign it to an attribute.  If it does not, assign the attribute to None."""
         if file.exists():
             match file.suffix:
-                case '.pickle':
+                case ".pickle":
                     try:
                         obj = load_pickle(file)
                     except Exception as e:
-                        """Specific exceptions some day?
-                            * cPickle.UnpicklingError: no top-level class def
-                            * AttributeError: openmm unit error
-                            * RuntimeError: torch/CUDA device error
-                        """
-                        print(f'Error loading {file}:\n   {type(e).__name__}: {e}\nSetting {file.stem} to None')
+                        # Specific exceptions some day?
+                        #   * cPickle.UnpicklingError: no top-level class def
+                        #   * AttributeError: openmm unit error
+                        #   * RuntimeError: torch/CUDA device error
+                        print(
+                            f"Error loading {file}:\n"
+                            f"   {type(e).__name__}: {e}\n"
+                            f"Setting {file.stem} to None"
+                        )
                         obj = None
-                case '.npy':
+                case ".npy":
                     obj = np.load(file)
-                case '.pt':
-                    """In a future PyTorch release, weights_only=True will become the default as it is safer as it won't allow unpickling of arbitrary Python objects.
-
-                    TODO: for now, use weights_only=False and sometime soon, migrate over to saving torch sequential objects using weights_only=True so that this load fuction doesn't fail.
-
-                    TODO: remove map_location=torch.device('cpu') when you figure out torch/cuda issue
-                    """
-                    obj = torch.load(file, map_location=torch.device('cpu'), weights_only=False)
+                case ".pt":
+                    # In a future PyTorch release, weights_only=True becomes the
+                    # default, as it is safer (it won't allow unpickling arbitrary
+                    # Python objects).
+                    # TODO: migrate to saving torch objects with weights_only=True
+                    # so this load no longer needs weights_only=False.
+                    # TODO: remove map_location=torch.device("cpu") once the
+                    # torch/cuda issue is resolved.
+                    obj = torch.load(
+                        file, map_location=torch.device("cpu"), weights_only=False
+                    )
                 case _:
                     raise TypeError(f"Don't recognize extension {file.suffix}")
         else:
@@ -112,17 +115,17 @@ class DataHandles:
             self._assign_object(self.files[label])
 
     def _save_and_assign_object(self, file, obj):
-        """Parameters:
-        -----------
+        """Parameters
+        ----------
         file : Path object
         obj : object to be saved to location specified by 'file'
         """
         match file.suffix:
-            case '.pickle':
+            case ".pickle":
                 save_pickle(file, obj)
-            case '.npy':
+            case ".npy":
                 np.save(file, obj)
-            case '.pt':
+            case ".pt":
                 torch.save(obj, file)
             case _:
                 raise TypeError(f"Don't recognize extension {file.suffix}")
@@ -131,7 +134,7 @@ class DataHandles:
 
     def save_and_assign_objects(self, labels_objects):
         """Save and assign all objects in dictionary,
-            labels_objects : dict (str) -> (obj)
+        labels_objects : dict (str) -> (obj)
         """
         for label, obj in labels_objects.items():
             self._save_and_assign_object(self.files[label], obj)
@@ -145,24 +148,22 @@ class DataHandles:
             file = self.working_dir / filename
             if file.exists():
                 m_time = file.stat().st_mtime
-                time = datetime.datetime.fromtimestamp(m_time)
+                mtime = datetime.datetime.fromtimestamp(m_time)
 
-                name_str = file.name + (max_len - len(filename)) * ' '
-                date_str = time.strftime('%d-%b-%Y')
-                existing_data_fields.append(f'   {name_str}   {date_str}\n')
+                name_str = file.name + (max_len - len(filename)) * " "
+                date_str = mtime.strftime("%d-%b-%Y")
+                existing_data_fields.append(f"   {name_str}   {date_str}\n")
             else:
-                missing_data_fields.append(f'   {file.name}\n')
+                missing_data_fields.append(f"   {file.name}\n")
 
         fields = []
-        line = f'{type(self).__name__} at {self.working_dir} containing data from:\n'
+        line = f"{type(self).__name__} at {self.working_dir} containing data from:\n"
         fields.append(line)
-        fields.append(f'{len(line) * "-"}\n')
+        fields.append(f'{(len(line) - 1) * "-"}\n')
         fields.extend(existing_data_fields)
-        fields.append('\n')
-        line = 'Files that do not yet exist:\n'
+        fields.append("\n")
+        line = "Files that do not yet exist:\n"
         fields.append(line)
-        fields.append(f'{len(line) * "-"}\n')
+        fields.append(f'{(len(line) - 1) * "-"}\n')
         fields.extend(missing_data_fields)
-        return ''.join(fields)
-
-
+        return "".join(fields)

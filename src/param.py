@@ -5,46 +5,49 @@ import openmm.unit as unit
 from .util import kT_in_kJ_per_mol
 from .DefaultMixin import DefaultMixin
 
-"""TODO
-* do we want directories as strings? (since openmm doesn't do pathlib)
-"""
+# TODO: do we want directories as strings? (since openmm doesn't do pathlib)
 
 
 def param_unbiased_reference():
-    """350 ns unbiased simulation, ca Apr. 24, 2024"""
-    return SimulationParameters(working_dir='data/unbiased')
+    """3 us simulation, June 12-17, 2026"""
+    return SimulationParameters(working_dir="data/unbiased")
+
+
+def param_unbiased_reference_350():
+    """350 ns simulation, ca Apr. 24, 2024"""
+    return SimulationParameters(working_dir="data/unbiased-350")
 
 
 def param_datarich_metad():
     """22 ns WTMetaD simulation, extended on Apr. 21, 2025"""
-    return SimulationParametersMetaD(
-        working_dir='data/datarich-metad', bias_factor=5.0
-    )
+    return SimulationParametersMetaD(working_dir="data/datarich-metad")
+
+
+def param_datarich_opes():
+    """22 ns OPES simulation, extended on Apr. 21, 2025"""
+    return SimulationParametersOPES(working_dir="data/datarich-opes")
 
 
 class SimulationParameters(DefaultMixin):
     """Hold parameters for OpenMM simulation
-        * defaults defined in top of init
-        * desired values are replaced by 'replace_defaults'
-        * some derivative parameters are then computed from these
-
-    TODO: move bias_factor into MetaD, OPES objects with defaults 5, 15.
+    * defaults defined in top of init
+    * desired values are replaced by 'replace_defaults'
+    * some derivative parameters are then computed from these
     """
+
     def __init__(self, **kwargs):
-        self.working_dir = 'data'
-        self.pdb_file = 'data/ala2_solv.pdb'
+        self.working_dir = "data"
+        self.pdb_file = "data/ala2_solv.pdb"
         self.simulation_time = 1 * unit.nanosecond
         self.lagtime = 1 * unit.picosecond
         self.temperature = 300 * unit.kelvin
         self.timestep = 0.002 * unit.picosecond
         self.friction_coeff = 1 / unit.picosecond
-        self.bias_factor = 15.0  #  5.0
-        self.dist_regularization = 1.0e-7  #  0.002
 
         self.num_features = 45
         self.num_eigvecs = 6
         self.num_cvs = 2
-        self.loss_method = 'vamp2'
+        self.loss_method = "vamp2"
         self.learning_rate = 5e-3
         self.frac_test = 0.1
 
@@ -59,9 +62,9 @@ class SimulationParameters(DefaultMixin):
         num_frames = self.simulation_time / self.lagtime
 
         # simulation must be a perfect multiple of the lagtime
-        assert np.isclose(num_frames, round(num_frames)), (
-            'Simulations must be a whole number of frames.  Check simulation_time and lagtime'
-        )
+        assert np.isclose(
+            num_frames, round(num_frames)
+        ), "Simulations must be a whole number of frames.  Check simulation_time and lagtime"
         self.num_frames = round(num_frames)
 
         self.timesteps_per_frame = round(self.lagtime / self.timestep)
@@ -69,24 +72,39 @@ class SimulationParameters(DefaultMixin):
         # assuming we always report once per frame
         self.report_interval = self.timesteps_per_frame
 
-        self.ns_per_frame = self.lagtime.in_units_of(unit.nanosecond)._value
+        self.ns_per_frame = self.lagtime.value_in_unit(unit.nanosecond)
 
         # string for labeling simulation output
-        self.ns = f'{self.ns_per_frame * self.num_frames:.1f}'
+        self.ns = f"{self.ns_per_frame * self.num_frames:.1f}"
 
         self.working_dir = Path(self.working_dir)
         self.working_dir.mkdir(parents=True, exist_ok=True)
 
 
 class SimulationParametersMetaD(SimulationParameters):
-    def __init__(self, **kwargs):
-        # Extract MetaD-specific overrides
-        self.tau_G = kwargs.pop('tau_G', 120 * unit.femtoseconds)
-        self.height = kwargs.pop('height', 1.20 * unit.kilojoule_per_mole)
-        self.width = kwargs.pop('width', np.array([0.1, 0.1]))
+    """SimulationParameters with Well-Tempered Metadynamics bias settings."""
 
-        # Now replace_default applied to remaining parameters
+    def __init__(self, **kwargs):
+        self.bias_factor = 5.0
+        self.dist_regularization = 1.0e-7  #  0.002
+
+        # MetaD-specific overrides, extracted before replace_defaults runs
+        self.tau_G = kwargs.pop("tau_G", 120 * unit.femtoseconds)
+        self.height = kwargs.pop("height", 1.20 * unit.kilojoule_per_mole)
+        self.width = kwargs.pop("width", np.array([0.1, 0.1]))
+
+        # replace_defaults applied to remaining parameters
         super().__init__(**kwargs)
 
         self.num_gaussians = round(self.simulation_time / self.tau_G)
         self.steps_per_gaussian = round(self.tau_G / self.timestep)
+
+
+class SimulationParametersOPES(SimulationParameters):
+    """SimulationParameters with OPES bias settings."""
+
+    def __init__(self, **kwargs):
+        self.bias_factor = 15.0
+        self.dist_regularization = 1.0e-7  #  0.002
+
+        super().__init__(**kwargs)

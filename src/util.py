@@ -3,12 +3,11 @@ import torch
 import openmm as mm
 import openmm.unit as unit
 import mdtraj as md
-from dataclasses import dataclass, field, is_dataclass
-import _pickle as cPickle
-from pathlib import Path, PosixPath
+from dataclasses import is_dataclass
+import pickle
+from pathlib import PosixPath
 import sys
 import time
-
 
 # --------------------------------------------------------------------------- #
 #  Torch Utility/Convenience Functions
@@ -24,10 +23,6 @@ def to_torch(a, device=None):
         corresponding data types.
     """
     return torch.tensor(a, dtype=torch.float32, device=device)
-#     return torch.Tensor(a)
-#     return torch.as_tensor(a, dtype=torch.float32)
-#     return torch.from_numpy(a)
-#     return torch.from_numpy(np.asarray(a, dtype=np.float32))
 
 
 def get_module_device(net):
@@ -46,24 +41,27 @@ def print_platform(simulation):
 
 def write_pdb(simulation, filename):
     positions = simulation.context.getState(getPositions=True).getPositions()
-    mm.app.PDBFile.writeFile(simulation.topology,
-                             positions,
-                             open(filename, 'w'))
+    with open(filename, "w") as f:
+        mm.app.PDBFile.writeFile(simulation.topology, positions, f)
 
 
 def create_system(forcefield, topology):
-    return forcefield.createSystem(topology,
-                                   nonbondedMethod=mm.app.PME,
-                                   nonbondedCutoff=0.9 * unit.nanometer,
-                                   constraints=mm.app.HBonds)
+    return forcefield.createSystem(
+        topology,
+        nonbondedMethod=mm.app.PME,
+        nonbondedCutoff=0.9 * unit.nanometer,
+        constraints=mm.app.HBonds,
+    )
 
 
 def state_data_reporter(filename, report_interval):
-    return mm.app.StateDataReporter(filename,
-                                        report_interval,
-                                        kineticEnergy=True,
-                                        potentialEnergy=True,
-                                        temperature=True)
+    return mm.app.StateDataReporter(
+        filename,
+        report_interval,
+        kineticEnergy=True,
+        potentialEnergy=True,
+        temperature=True,
+    )
 
 
 def hdf5_reporter(filename, report_interval):
@@ -84,9 +82,9 @@ def get_force_group_name(system, force_group_id):
 
 
 def check_force_group(system, force_group_id):
-    assert get_force_group_name(system, force_group_id) == 'TorchForce', (
-        f'Force group id assigned to something other than TorchForce!'
-    )
+    assert (
+        get_force_group_name(system, force_group_id) == "TorchForce"
+    ), "Force group id assigned to something other than TorchForce!"
 
 
 def get_energy_dict(system, simulation):
@@ -134,9 +132,7 @@ def bias_from_context(simulation, force_group_id):
 
 
 def kT_in_kJ_per_mol(temperature):
-    assert unit.is_quantity(temperature), (
-        "temperature must be a unit in K"
-    )
+    assert unit.is_quantity(temperature), "temperature must be a unit in K"
     kT = unit.MOLAR_GAS_CONSTANT_R * temperature
     return kT.in_units_of(unit.kilojoule / unit.mole)._value
 
@@ -147,25 +143,26 @@ def kT_in_kJ_per_mol(temperature):
 
 
 def save_pickle(filename, obj):
-    with open(filename, 'wb') as f:
-        cPickle.dump(obj, f)
+    with open(filename, "wb") as f:
+        pickle.dump(obj, f)
 
 
 def load_pickle(filename):
-    with open(filename, 'rb') as f:
-        return cPickle.load(f)
+    with open(filename, "rb") as f:
+        return pickle.load(f)
 
 
 def pretty_print(obj, gap=4):
+    """Print obj's attributes (or dataclass fields), one per line, value-aligned."""
     if is_dataclass(obj):
-        for field in obj.__dataclass_fields__:
-            print(f'{field} = {getattr(obj, field)}')
+        items = {name: getattr(obj, name) for name in obj.__dataclass_fields__}
     else:
-        maxlen = max(len(key) for key in obj.__dict__)
+        items = vars(obj)
 
-        for key, val in obj.__dict__.items():
-            spaces = ' ' * (maxlen - len(key) + gap - 2)
-            print(key, spaces, val)
+    maxlen = max(len(key) for key in items)
+    for key, val in items.items():
+        spaces = " " * (maxlen - len(key) + gap - 2)
+        print(key, spaces, val)
 
 
 def arr_str(a, precision=3, abbreviate=False, abbreviate_rows=False, oneline=False):
@@ -181,24 +178,32 @@ def arr_str(a, precision=3, abbreviate=False, abbreviate_rows=False, oneline=Fal
     abbreviate_rows : Bool
         In case of 2d array, like abbreviate but for rows
     """
+
     def row_str(a, precision, abbreviate):
         if abbreviate:
-            row = f'{a[0]:.{precision}f}...{a[-1]:.{precision}f}'
+            row = f"{a[0]:.{precision}f}...{a[-1]:.{precision}f}"
         else:
-            row = ' '.join([f'{x:.{precision}f}' for x in a])
-        return '[' + row + ']'
+            row = " ".join([f"{x:.{precision}f}" for x in a])
+        return "[" + row + "]"
 
-    endchar = '' if oneline else '\n'
+    endchar = "" if oneline else "\n"
     if len(a.shape) == 1:
         return row_str(a, precision, abbreviate)
     elif len(a.shape) == 2:
         if abbreviate_rows:
-            return '[' + row_str(a[0], precision, abbreviate) + endchar \
-                + '...' + endchar \
-                + row_str(a[-1], precision, abbreviate) + ']'
+            return (
+                "["
+                + row_str(a[0], precision, abbreviate)
+                + endchar
+                + "..."
+                + endchar
+                + row_str(a[-1], precision, abbreviate)
+                + "]"
+            )
         else:
-            return '[' + endchar.join([row_str(r, precision, abbreviate)
-                                       for r in a]) + ']'
+            return (
+                "[" + endchar.join([row_str(r, precision, abbreviate) for r in a]) + "]"
+            )
 
 
 def sample_array_rows(a, sample_size):
@@ -209,31 +214,29 @@ def sample_array_rows(a, sample_size):
     sample_size : int
         The number of random samples to be returned.
     """
-    assert len(a) >= sample_size, (
-        f"ERROR: can't sample {sample_size} rows from array with shape {a.shape}"
-    )
+    assert (
+        len(a) >= sample_size
+    ), f"ERROR: can't sample {sample_size} rows from array with shape {a.shape}"
     return a[np.random.choice(len(a), sample_size, replace=False)]
 
 
-def sizeof(obj, units='kB', loud=False):
-    assert units in ('kB', 'MB', 'GB'), (
-        f"Can't do unit {units}"
-    )
-    BYTE_TO_KB = 0.0009765625
+def sizeof(obj, units="kB", loud=False):
+    assert units in ("kB", "MB", "GB"), f"Can't do unit {units}"
+    BYTE_TO_KB = 1 / 1024
 
     def size_units(size_kb, units):
-        if units == 'kB':
+        if units == "kB":
             return size_kb
-        elif units == 'MB':
-            return size_kb / 1_000
-        elif units == 'GB':
-            return size_kb / 1_000_000
+        elif units == "MB":
+            return size_kb / 1024
+        elif units == "GB":
+            return size_kb / 1024**2
 
     total_size_kb = 0
     for key, val in vars(obj).items():
         kb = sys.getsizeof(val) * BYTE_TO_KB
         if loud:
-            print(f'size of {key} = {size_units(kb, units)} {units}')
+            print(f"size of {key} = {size_units(kb, units)} {units}")
         total_size_kb += kb
 
     return size_units(total_size_kb, units)
@@ -241,13 +244,15 @@ def sizeof(obj, units='kB', loud=False):
 
 def check_dataclass_field_types(obj):
     """Found on https://stackoverflow.com/questions/58992252/how-to-enforce-dataclass-fields-types
-        Check that arguments passed match type hints.
-        Parameters: dc_obj = instance of dataclass object
+    Check that arguments passed match type hints.
+    Parameters: dc_obj = instance of dataclass object
     """
-    for (name, field_type) in obj.__annotations__.items():
+    for name, field_type in obj.__annotations__.items():
         obj_attr = getattr(obj, name)
         if not isinstance(obj_attr, field_type):
-            raise TypeError(f"The field `{name}` was assigned by `{type(obj_attr)}` instead of `{field_type}`")
+            raise TypeError(
+                f"The field `{name}` was assigned by `{type(obj_attr)}` instead of `{field_type}`"
+            )
 
 
 def range_steps_dataset(step, num_steps_data=5):
@@ -273,24 +278,21 @@ def print_status_file(file, num_chars=None):
     num_chars : int
         The total number of character reserved for the file name.  The date modified appears after this many characters.  If None, use 4 spaces after the file name.
     """
-    assert isinstance(file,  PosixPath), (
-        "'file' needs to be of type 'Path'"
-    )
+    assert isinstance(file, PosixPath), "'file' needs to be of type 'Path'"
     if num_chars is None:
-        whitespace = ' ' * 4
+        whitespace = " " * 4
     else:
-        whitespace = ' ' * (num_chars - len(str(file)))
+        whitespace = " " * (num_chars - len(str(file)))
 
     if file.exists():
         timestamp = time.ctime(file.stat().st_mtime)
-        print(f'file {file} exists.{whitespace} Modified {timestamp}')
+        print(f"file {file} exists.{whitespace} Modified {timestamp}")
     else:
-        print(f'file {file} not found.')
+        print(f"file {file} not found.")
 
 
 def print_status_files(files):
-    """For each Path object in list, 'files', print whether file exists and, if it does, when it was last modified.
-    """
+    """For each Path object in list, 'files', print whether file exists and, if it does, when it was last modified."""
     num_chars = len(str(max(files, key=lambda file: len(str(file))))) + 4
     for file in files:
         print_status_file(file, num_chars=num_chars)
@@ -307,4 +309,3 @@ def unpack_obj(obj, obj_type="surf"):
         return obj.x, obj.y, obj.z
     else:
         raise ValueError(f"Unknown obj_type: {obj_type!r}")
-

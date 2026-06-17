@@ -84,9 +84,11 @@ class SimulationParameters(DefaultMixin):
 class SimulationParametersMetaD(SimulationParameters):
     """SimulationParameters with Well-Tempered Metadynamics bias settings.
 
-    Note: because we're using super().__init__(**kwargs), any field that does not appear in SimulationParameters.__init__ kwargs will give an error.
+    Note: because we're using this behaviour:
+        super().__init__(**kwargs) --> DefaultMixin.__init__(**kwargs)
+    any field that does not appear in SimulationParameters.__init__ kwargs will give an error.
 
-    The workaround is to use 'pop' with default values, which gives the desired behaviour.
+    Workaround is to use 'pop' with default values, which matches the desired behaviour.
     """
 
     def __init__(self, **kwargs):
@@ -99,6 +101,7 @@ class SimulationParametersMetaD(SimulationParameters):
         # replace_defaults applied to remaining parameters
         super().__init__(**kwargs)
 
+        # post-init
         self.num_gaussians = round(self.simulation_time / self.tau_G)
         self.steps_per_gaussian = round(self.tau_G / self.timestep)
 

@@ -1,148 +1,185 @@
 import numpy as np
+import torch
 from pathlib import Path
 import datetime
-import torch
 
-from .util import save_pickle, load_pickle
+from .util import load_pickle, save_pickle
+
+
+# Each handler is a (loader, saver) pair where:
+#     loader(file) -> object
+#     saver(file, obj) -> None
+
+def _load_npy(file):
+    return np.load(file)
+
+
+def _save_npy(file, obj):
+    np.save(file, obj)
+
+
+def _load_pt(file):
+    # weights_only=False is needed until torch objects are saved in a
+    # weights_only-safe form; map_location="cpu" sidesteps the torch/CUDA
+    # device issue. Revisit both once those migrations land.
+    return torch.load(file, map_location="cpu", weights_only=False)
+
+
+def _save_pt(file, obj):
+    torch.save(obj, file)
+
+
+_HANDLERS = {
+    ".pickle": (load_pickle, save_pickle),
+    ".npy": (_load_npy, _save_npy),
+    ".pt": (_load_pt, _save_pt),
+}
 
 
 class DataHandles:
-    """Base class for providing handles for computed & saved data.
+    """Base class providing lazily-loaded handles for saved data.
 
-    Child classes must define:
+    Subclasses must define two class attributes:
 
-        data_filenames : list[str]
-            List of filenames for all data (arrays, torch objects, or pickled objects) for which handles (assigned variables) may be provided.
+    data_filenames : list[str]
+        Filenames whose stems become the data labels/attributes.  For example
+        ``"features.npy"`` is reachable as ``self.features``.
 
-        other_filenames : dict[str label: str filename]
-            Labels/filenames that are not assigned, just added to self.files dict.
+    other_filenames : dict[str, str]
+        ``label -> filename`` for files referenced by an explicit label rather
+        than by stem (e.g. trajectory inputs).  These are *not* loaded as
+        attributes; they live in ``self.files`` for path lookup.
 
-    Two use cases:
-        1. assign_labels = None
+    Accessing ``self.<label>`` reads the file on first use and caches the
+    result.  If the file does not exist the attribute evaluates to ``None`` and
+    is re-checked on the next access (so it picks up a file written later).
 
-            Create an attribute with name 'filename.stem', for each filename is in data_filenames.  Each attribute is assigned to either:
-
-            (a) the object in its file
-            (b) None, in case the file doesn't exist
-
-        2. assign_labels = ['label1', 'label2', ...]
-
-            Create only attributes 'label1', 'label2', ...
-
-    Once instantiated, further new attributes can be assigned with
-        save_and_assign_objects({'label': object, ...})
+    Save new objects with :meth:`save_and_assign_objects`, which writes them and
+    refreshes the cached attributes.
     """
 
-    def __init__(self, working_dir, assign_labels=None):
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        for required in ("data_filenames", "other_filenames"):
+            if not hasattr(cls, required):
+                raise TypeError(
+                    f"{cls.__name__} must define class attribute {required!r}"
+                )
+
+    def __init__(self, working_dir):
         """Parameters
         ----------
         working_dir : str or Path
-            Location for data files to be written
-        assign_label : list(str)
-            If None: assign all objects in ChildClass.data_filenames
-            Else: assign only objects in list of labels
+            Directory where data files are read from and written to.  Created if
+            it does not exist.
         """
         self.working_dir = Path(working_dir)
         self.working_dir.mkdir(parents=True, exist_ok=True)
-        self.files = self._files_dict(self.working_dir)
+        self.files = self._build_files()
 
-        if assign_labels is None:
-            labels = [Path(filename).stem for filename in type(self).data_filenames]
-        else:
-            labels = assign_labels
+    def _build_files(self):
+        """Map every label to its absolute path.
 
-        for label in labels:
-            self._assign_object(self.files[label])
-
-    def _files_dict(self, working_dir):
-        """Returns
+        Returns
         -------
-        files : dict[str: Path]
-                The dictionary containing all label: file pairs contained in
-                (child).data_filenames : list [str]
-                (child).other_filenames : dict [str: str]
+        dict[str, Path]
+            ``label -> path`` for both ``data_filenames`` (keyed by stem) and
+            ``other_filenames`` (keyed by their explicit label).
+
+        Raises
+        ------
+        ValueError
+            If two filenames collapse to the same label.
         """
         files = {}
 
-        for filename in type(self).data_filenames:
-            file = working_dir / filename
-            files[file.stem] = file
+        for filename in self.data_filenames:
+            label = Path(filename).stem
+            if label in files:
+                raise ValueError(f"Duplicate data label {label!r} from {filename!r}")
+            files[label] = self.working_dir / filename
 
-        for label, filename in type(self).other_filenames.items():
-            files[label] = working_dir / filename
+        for label, filename in self.other_filenames.items():
+            if label in files:
+                raise ValueError(f"Label {label!r} collides with a data filename")
+            files[label] = self.working_dir / filename
 
         return files
 
-    def _assign_object(self, file):
-        """If the file containing the object exists, load it and assign it to an attribute.  If it does not, assign the attribute to None."""
-        if file.exists():
-            match file.suffix:
-                case ".pickle":
-                    try:
-                        obj = load_pickle(file)
-                    except Exception as e:
-                        # Specific exceptions some day?
-                        #   * cPickle.UnpicklingError: no top-level class def
-                        #   * AttributeError: openmm unit error
-                        #   * RuntimeError: torch/CUDA device error
-                        print(
-                            f"Error loading {file}:\n"
-                            f"   {type(e).__name__}: {e}\n"
-                            f"Setting {file.stem} to None"
-                        )
-                        obj = None
-                case ".npy":
-                    obj = np.load(file)
-                case ".pt":
-                    # In a future PyTorch release, weights_only=True becomes the
-                    # default, as it is safer (it won't allow unpickling arbitrary
-                    # Python objects).
-                    # TODO: migrate to saving torch objects with weights_only=True
-                    # so this load no longer needs weights_only=False.
-                    # TODO: remove map_location=torch.device("cpu") once the
-                    # torch/cuda issue is resolved.
-                    obj = torch.load(
-                        file, map_location=torch.device("cpu"), weights_only=False
-                    )
-                case _:
-                    raise TypeError(f"Don't recognize extension {file.suffix}")
-        else:
-            obj = None
-        setattr(self, file.stem, obj)
+    # -- lazy attribute access ---------------------------------------------
 
-    def assign_objects(self, labels):
-        for label in labels:
-            self._assign_object(self.files[label])
+    def __getattr__(self, name):
+        """Load ``self.files[name]`` on first access and cache it.
 
-    def _save_and_assign_object(self, file, obj):
-        """Parameters
-        ----------
-        file : Path object
-        obj : object to be saved to location specified by 'file'
+        Only invoked when normal attribute lookup fails.  Names starting with
+        an underscore, and any lookup before ``self.files`` exists, raise
+        ``AttributeError`` so that copy/pickle machinery behaves normally.
         """
-        match file.suffix:
-            case ".pickle":
-                save_pickle(file, obj)
-            case ".npy":
-                np.save(file, obj)
-            case ".pt":
-                torch.save(obj, file)
-            case _:
-                raise TypeError(f"Don't recognize extension {file.suffix}")
-        # self._assign_object(file) # TODO: is this better for some reason?
-        setattr(self, file.stem, obj)
+        if name.startswith("_") or "files" not in self.__dict__:
+            raise AttributeError(name)
+
+        files = self.__dict__["files"]
+        if name not in files:
+            raise AttributeError(name)
+
+        obj = self._load(files[name])
+        if obj is not None:
+            # Cache so future access bypasses __getattr__.  A missing file
+            # (None) is left uncached so it is re-read if written later.
+            setattr(self, name, obj)
+        return obj
+
+    # -- (de)serialisation --------------------------------------------------
+
+    @staticmethod
+    def _load(file):
+        """Load the object at *file*, or ``None`` if it does not exist.
+
+        A load failure (corrupt file, unpickling error, device mismatch, ...)
+        is reported and treated as ``None`` rather than raising.
+        """
+        if not file.exists():
+            return None
+        try:
+            loader, _ = _HANDLERS[file.suffix]
+        except KeyError:
+            raise TypeError(f"No handler for extension {file.suffix!r}") from None
+        try:
+            return loader(file)
+        except Exception as exc:
+            print(f"Could not load {file} ({type(exc).__name__}: {exc}); using None")
+            return None
+
+    @staticmethod
+    def _save(file, obj):
+        try:
+            _, saver = _HANDLERS[file.suffix]
+        except KeyError:
+            raise TypeError(f"No handler for extension {file.suffix!r}") from None
+        saver(file, obj)
+
+    def _save_object(self, label, obj):
+        """Write *obj* to the file for *label* and cache it as an attribute."""
+        self._save(self.files[label], obj)
+        setattr(self, label, obj)
 
     def save_and_assign_objects(self, labels_objects):
-        """Save and assign all objects in dictionary,
-        labels_objects : dict (str) -> (obj)
-        """
+        """Save and cache every ``label -> object`` pair in *labels_objects*."""
         for label, obj in labels_objects.items():
-            self._save_and_assign_object(self.files[label], obj)
+            self._save_object(label, obj)
+
+    def reload(self, *labels):
+        """Drop cached values so the next access re-reads from disk.
+
+        With no arguments, drop every cached data attribute.
+        """
+        for label in labels or tuple(self.files):
+            self.__dict__.pop(label, None)
 
     def __str__(self):
         existing_data_fields = []
         missing_data_fields = []
-        max_len = len(max(type(self).data_filenames, key=len))
+        max_len = max((len(f) for f in type(self).data_filenames), default=0)
 
         for filename in type(self).data_filenames:
             file = self.working_dir / filename

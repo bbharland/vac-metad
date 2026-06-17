@@ -82,13 +82,16 @@ class SimulationParameters(DefaultMixin):
 
 
 class SimulationParametersMetaD(SimulationParameters):
-    """SimulationParameters with Well-Tempered Metadynamics bias settings."""
+    """SimulationParameters with Well-Tempered Metadynamics bias settings.
+
+    Note: because we're using super().__init__(**kwargs), any field that does not appear in SimulationParameters.__init__ kwargs will give an error.
+
+    The workaround is to use 'pop' with default values, which gives the desired behaviour.
+    """
 
     def __init__(self, **kwargs):
-        self.bias_factor = 5.0
-        self.dist_regularization = 1.0e-7  #  0.002
-
         # MetaD-specific overrides, extracted before replace_defaults runs
+        self.bias_factor = kwargs.pop("tau_G", 5.0)
         self.tau_G = kwargs.pop("tau_G", 120 * unit.femtoseconds)
         self.height = kwargs.pop("height", 1.20 * unit.kilojoule_per_mole)
         self.width = kwargs.pop("width", np.array([0.1, 0.1]))
@@ -104,7 +107,7 @@ class SimulationParametersOPES(SimulationParameters):
     """SimulationParameters with OPES bias settings."""
 
     def __init__(self, **kwargs):
-        self.bias_factor = 15.0
-        self.dist_regularization = 1.0e-7  #  0.002
+        self.bias_factor = kwargs.pop("bias_factor", 15.0)
+        self.dist_regularization = kwargs.pop("dist_regularization", 1.0e-7)
 
         super().__init__(**kwargs)

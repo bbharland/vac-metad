@@ -1,178 +1,92 @@
-import numpy as np
+"""Convenient handles for one simulation's extracted, learned, and projected data."""
+
+import itertools
 from pathlib import Path
-import openmm.unit as unit
+
+import numpy as np
 import mdtraj as md
+from openmm import unit
 
+# Project-specific imports — adjust these to match your package layout.
+from .params import SimulationParameters
 from .DataHandles import DataHandles
-from .param import SimulationParameters
-from .calcs import (
-    feature_grid_over_dihedrals,
-    psi_grid_from_feature_grid,
-    cvs_grid_from_feature_grid,
-)
 
 
-def simulation_data(p, subdir=None, assign_labels=None, loud=True, num_points=100):
-    """Working directory is 'base_dir/subdir'
-        1. basedir determined by 'p'
-        2. subdir can be
-            - ignored       None
-            - subdir        subdir is a string
-            - step_n        subdir is an integer, n
+def simulation_data(p, subdir=None, lagframes=1):
+    """Build a :class:`SimulationData` for ``basedir/subdir``.
 
     Parameters
     ----------
-    p : SimulationParameters => basedir = Path(p.working_dir)
-                        Path => basedir = p
-                         str => basedir = Path(p)
+    p : SimulationParameters or Path or str
+        Determines the base directory.  A ``SimulationParameters`` also supplies
+        the lagtime; a bare path/string defaults the lagtime to 1.
+    subdir : None, int, or str
+        - ``None``: use the base directory directly.
+        - int ``n``: use the ``step_n`` subdirectory.
+        - str: use the named subdirectory.
+    lagframes : int
+        Number of simulation frames corresponding to one lagtime.
 
-    subdir : None => don't use a subdirectory
-              int => the step number for the subdirectory
-              str => the name of the subdirectory
-
-    assign_labels : list(str)
-        When not None, only assign these labels when instantiating (to save memory)
-
-    loud : Bool
-        When True, create working_dir if it does not exist and print a bunch of checks to screen.
-        When False, just invoke SimulationData constructor
-
-    num_points : int => sd.theta_grid has num_points points
-                None => sd.theta_grid not assigned
+    Returns
+    -------
+    SimulationData
     """
-    lagframes = 1
-
     if isinstance(p, SimulationParameters):
         basedir = Path(p.working_dir)
-        lagtime = p.lagtime.in_units_of(unit.picosecond)._value
-    elif isinstance(p, Path):
-        basedir = p
-        lagtime = 1
-    elif isinstance(p, str):
+        lagtime = p.lagtime.value_in_unit(unit.picosecond)
+    elif isinstance(p, (str, Path)):
         basedir = Path(p)
         lagtime = 1
     else:
-        raise TypeError(f"Type {type(p)} not known.")
+        raise TypeError(f"Cannot build simulation_data from p of type {type(p).__name__}")
 
     if subdir is None:
         working_dir = basedir
-    elif type(subdir) is int:
-        working_dir = basedir / f"step_{subdir}"
-    elif type(subdir) is str:
+    elif isinstance(subdir, str):
         working_dir = basedir / subdir
+    elif isinstance(subdir, (int, np.integer)):
+        working_dir = basedir / f"step_{subdir}"
     else:
-        raise TypeError(f"Can't handle 'subdir' type {type(subdir)}")
+        raise TypeError(f"Cannot handle subdir of type {type(subdir).__name__}")
 
-    if not working_dir.exists():
-        print(f"Creating new directory {working_dir}")
-        working_dir.mkdir()
-
-    sd = SimulationData(working_dir, lagtime, lagframes, assign_labels=assign_labels)
-
-    # Always assign 'theta_grid' (unless num_point is explicitly set to None).  This makes code easier to reason about
-    if num_points is not None:
-        if not sd.files["theta_grid"].exists():
-            sd.save_theta_grid(num_points=num_points)
-        else:
-            sd.assign_objects(["theta_grid"])
-
-    if loud:
-        dihedrals_exist = sd.files["dihedrals"].exists()
-        features_exist = sd.files["features"].exists()
-
-        if dihedrals_exist and features_exist:
-            if hasattr(sd, "features") and sd.features is not None:
-                print(
-                    f"Loaded SimulationData object from {working_dir} "
-                    f"with {len(sd.features)} frames"
-                )
-            elif hasattr(sd, "dihedrals") and sd.dihedrals is not None:
-                print(
-                    f"Loaded SimulationData object from {working_dir} "
-                    f"with {len(sd.dihedrals)} frames"
-                )
-            else:
-                print(f"Loaded SimulationData object from {working_dir}")
-        elif not dihedrals_exist and not features_exist:
-            print(f"Creating new SimulationData object with no data at {working_dir}")
-        else:
-            missing = "dihedrals" if features_exist else "features"
-            print(
-                f"WARNING: {working_dir} has one of dihedrals/features but "
-                f"not the other (missing {missing})"
-            )
-
-    # make sure SRV net is on correct device
-    if sd.files["srv"].exists() and hasattr(sd, "srv"):
-        sd.srv.net.to(device=sd.srv.device)
-
-    return sd
+    return SimulationData(working_dir, lagtime, lagframes)
 
 
 class SimulationData(DataHandles):
-    """The sequence is:
-        1. Get dihedrals, features, biases weights out of a trajectory
-            sd.save_feature_data(recalculate=True, pdbfile=p.pdb_file)
-            sd.save_and_assign_objects({
-                'biases': np.array(simulation_biases),
-                'weights': np.array(simulation_weights)
-                })
+    """Handles for one simulation's extracted, learned, and projected data.
 
-        2. Train network with features
-            sd.save_and_assign_objects({'vampnet': vn})
+    Typical sequence:
+        1. Extract ``dihedrals`` and ``features`` from a trajectory
+           (:meth:`save_feature_data`), usually from a ``.h5`` file.
+        2. Train an SRV on the features, then save eigenfunctions/CVs
+           (:meth:`save_eigen_data`).
+        3. Project eigenfunctions onto a dihedral grid
+           (:meth:`save_grid_data`).
 
-        3. Save eigenfunctions and CVs for trajectory
-            sd.save_eigen_data(srv)
-
-        4. Project trajectory eigenfunctions/CVs onto dihedral grid
-            sd.save_grid_data(srv)
-            sd.save_and_assign_objects({'bias_shift': bias_shift})
-
-    KDE/FES/bias-grid data (formerly save_kde_fes_bias_data) has moved to
-    data_attic.py pending the grid-calculations redesign -- see claude.txt.
+    TODO: extend to an EnhancedSimulationData that also stores bias-potential
+    values and frame weights — without adding those calculations here.
     """
 
     data_filenames = [
-        # ---------------------- numpy arrays -------------------------
-        "widths.npy",
-        #                       current step data
+        "final_positions.pickle",
+        # Extracted simulation data
         "dihedrals.npy",
         "features.npy",
-        "heavy_atoms.npy",
-        "weights.npy",
-        "biases.npy",
-        "eigvals.npy",
-        "timescales.npy",
-        "bias_shift.npy",
-        #                       full dataset
         "psi.npy",
         "cvs.npy",
-        #                       grids
-        "s1.npy",
-        "s2.npy",
-        "grid.pickle",
-        "bias.pickle",
-        "fes.pickle",
+        # SRV
+        "vampnet.pickle",
+        "srv.pickle",
+        "srv_net.pt",
+        "eigvals.npy",
+        "timescales.npy",
+        # Data projected onto dihedral grids
         "theta_grid.npy",
         "feature_grid.npy",
         "psi_grid.npy",
-        "cvs_grid.npy",
-        #                       MSM states
+        # MSM states
         "states.npy",
         "states_core.npy",
-        #                       converging distributions
-        # 'num_frames_conv.npy',  'pgrids_conv.npy',
-        # ---------------------- pytorch models -----------------------
-        # 'force_module.pt' needs to be opened with 'torch.jit.load'
-        "srv_net.pt",
-        # ---------------------- objects ------------------------------
-        "vampnet.pickle",
-        "srv.pickle",
-        "kde.pickle",
-        "kde_c.pickle",
-        "final_positions.pickle",
-        "metad.pickle",
-        "metad_kde.pickle",
     ]
     other_filenames = {
         "h5file": "traj.h5",
@@ -180,102 +94,96 @@ class SimulationData(DataHandles):
         "outfile": "traj.out",
     }
 
-    def __init__(self, working_dir, lagtime, lagframes, assign_labels=None):
+    def __init__(self, working_dir, lagtime, lagframes):
         """Parameters
         ----------
-        working_dir : str
-            Location for data files to be written
+        working_dir : str or Path
+            Directory for this simulation's data files.
         lagtime : float
-            Time separating transitions (tau, in ps)
+            Time separating transitions (tau, in ps).
         lagframes : int
-            Number of simulation frames that make up this lagtime
-        assign_label : list(str)
-            If None: assign all objects in SimulationData.data_filenames
-            Else: assign all obects in list of labels
+            Number of simulation frames making up one lagtime.
         """
-        super().__init__(working_dir, assign_labels=assign_labels)
+        super().__init__(working_dir)
         self.lagtime = lagtime
         self.lagframes = lagframes
 
-    def save_theta_grid(self, num_points=100):
-        """Save the grid over which dihedral space is discretized.  This doesn't really fit anywhere else.
-
-        Note that 'theta_grid' is assigned always (when 'simlation_data' function is used for construction)!
-        """
-        theta_grid = np.linspace(-np.pi, np.pi, num_points)
-        self.save_and_assign_objects({"theta_grid": theta_grid})
-
     def save_feature_data(self, periodic=True, recalculate=False, pdbfile=None):
-        """Save files if they don't exist (or recalculate is set to True):
+        """Compute and save ``dihedrals`` and ``features`` if missing.
 
-            dihedrals.npy : ndarray with shape (num_frames, 2)
-            features.npy : ndarray with shape (num_frames, num_features)
+        Writes (when absent, or when *recalculate* is True):
 
-        Files are produced by reading existing dcd or h5 files.  If the dcd file exists, that will be read.  Otherwise, h5 file is used.
+            dihedrals.npy : (num_frames, 2)
+            features.npy  : (num_frames, num_features)
+
+        The trajectory is only loaded if at least one file needs writing.  A
+        ``.dcd`` file is used when *pdbfile* is given and the dcd exists;
+        otherwise the ``.h5`` file is read.
 
         Parameters
         ----------
-        pdbfile : str
-            If anything is provided here, prefer using dcd file.  Otherwise h5 file will be used.
+        periodic : bool
+            Whether heavy-atom distances respect periodic boundaries.
+        recalculate : bool
+            Recompute and overwrite even if the files already exist.
+        pdbfile : str, optional
+            Topology for reading the ``.dcd`` trajectory.  If omitted, the
+            ``.h5`` file is used instead.
         """
-        if pdbfile and self.files["dcdfile"].exists():
-            traj = md.load_dcd(self.files["dcdfile"], top=pdbfile)
-        elif self.files["h5file"].exists():
-            traj = md.load(self.files["h5file"])
-        else:
-            raise FileNotFoundError("Need either h5 file or dcd + pdb file")
+        need_dihedrals = recalculate or not self.files["dihedrals"].exists()
+        need_features = recalculate or not self.files["features"].exists()
+        if not (need_dihedrals or need_features):
+            print("dihedrals and features already present in", self.working_dir)
+            return
 
-        file = self.files["dihedrals"]
-        if not file.exists() or recalculate:
-            print("writing", file)
+        traj = self._load_trajectory(pdbfile)
+
+        if need_dihedrals:
+            print("writing", self.files["dihedrals"])
             dihedrals = np.hstack([md.compute_phi(traj)[1], md.compute_psi(traj)[1]])
-            self._save_and_assign_object(file, dihedrals)
-        else:
-            print("not recalculating", file)
+            self._save_object("dihedrals", dihedrals)
 
-        file = self.files["features"]
-        if not file.exists() or recalculate:
-            print("writing", file)
+        if need_features:
+            print("writing", self.files["features"])
             features = self.heavy_atom_distances(traj, periodic=periodic)
-            self._save_and_assign_object(file, features)
-        else:
-            print("not recalculating", file)
+            self._save_object("features", features)
 
-    def _heavy_atom_indices(self, traj):
-        return traj.topology.select("resname != HOH && type != H")
+    def _load_trajectory(self, pdbfile=None):
+        """Load this simulation's trajectory, preferring dcd+pdb when available."""
+        if pdbfile and self.files["dcdfile"].exists():
+            return md.load_dcd(self.files["dcdfile"], top=pdbfile)
+        if self.files["h5file"].exists():
+            return md.load(self.files["h5file"])
+        raise FileNotFoundError("Need either an h5 file, or a dcd file plus pdbfile")
 
-    def heavy_atom_distances(self, traj, periodic=True):
-        """Return : ndarray with shape (num_frames, num_pairs)
-        The 45 atom-pair distances for an mdtraj Trajectory
+    @staticmethod
+    def heavy_atom_distances(traj, periodic=True):
+        """Pairwise distances between all heavy (non-water, non-H) atoms.
+
+        Returns
+        -------
+        np.ndarray
+            Shape ``(num_frames, num_pairs)``.  For alanine dipeptide this is
+            the 45 heavy-atom-pair distances.
         """
-        heavy_atoms = self._heavy_atom_indices(traj)
-        atom_pairs = np.array(
-            [(i, j) for i in heavy_atoms for j in heavy_atoms if i < j]
-        )
+        heavy_atoms = traj.topology.select("resname != HOH && type != H")
+        atom_pairs = np.array(list(itertools.combinations(heavy_atoms, 2)))
         return md.compute_distances(traj, atom_pairs, periodic=periodic)
 
-    def heavy_atom_positions(self, traj):
-        """Save heavy-atom Cartesian coordinates.
+    def save_eigen_data(self, srv, features=None, num_cvs=2):
+        """Transform and save SRV eigenfunction data for this simulation.
+
+        Call once the SRV has been fitted.  The SRV is not intended to be used
+        afterwards, since ``srv.srv_net()`` moves ``srv.net`` to the CPU (it is
+        restored to ``srv.device`` before the objects are written).
 
         Parameters
         ----------
-        traj : mdtraj.Trajectory
-
-        Saves
-        -----
-        heavy_atoms.npy : ndarray, shape (num_heavy_atoms * 3, num_frames)
-            Heavy-atom xyz coordinates, one column per frame.
-        """
-        heavy_atoms = self._heavy_atom_indices(traj)
-        xyz = traj.xyz[:, heavy_atoms, :]
-        positions = xyz.reshape(xyz.shape[0], -1).T
-        self.save_and_assign_objects({"heavy_atoms": positions})
-        return positions
-
-    def save_eigen_data(self, srv, features=None, num_cvs=2):
-        """Transform/save vampnet eigenfunction data from a single simulation.
-        * call once SRV has been fitted
-        * SRV not intended to be used after this (sends srv.net to CPU)
+        srv : fitted SRV
+        features : np.ndarray, optional
+            Defaults to ``self.features``.
+        num_cvs : int
+            Number of leading eigenfunctions to keep as collective variables.
         """
         if features is None:
             features = self.features
@@ -287,27 +195,75 @@ class SimulationData(DataHandles):
             "timescales": srv.timescales(),
             "psi": psi,
             "cvs": psi[:, :num_cvs],
-            "srv_net": srv.srv_net(),  # sends srv.net to the CPU
+            "srv_net": srv.srv_net(),  # moves srv.net to the CPU
         }
-        srv.net.to(device=srv.device)  # put it back
+        srv.net.to(device=srv.device)  # restore before pickling srv
         self.save_and_assign_objects(labels_objects)
 
-    def save_grid_data(self, srv):
-        """Project eigenfunctions onto the dihedral grid.
+    def save_grid_data(self, srv, num_points):
+        """Project eigenfunctions onto a ``num_points`` dihedral grid.
 
-        Call after save_eigen_data (or with an SRV whose net is already on
-        srv.device, as save_eigen_data leaves it).
+        Call after :meth:`save_eigen_data` (or with an SRV whose ``net`` is on
+        ``srv.device``, which :meth:`save_eigen_data` leaves it as).
         """
+        theta_grid = np.linspace(-np.pi, np.pi, num_points)
+
         feature_grid = feature_grid_over_dihedrals(
-            self.features, self.dihedrals, self.theta_grid
+            self.features, self.dihedrals, theta_grid
         )
         psi_grid = psi_grid_from_feature_grid(feature_grid, srv)
-        cvs_grid = cvs_grid_from_feature_grid(feature_grid, srv)
 
         self.save_and_assign_objects(
             {
+                "theta_grid": theta_grid,
                 "feature_grid": feature_grid,
                 "psi_grid": psi_grid,
-                "cvs_grid": cvs_grid,
             }
         )
+
+
+def feature_grid_over_dihedrals(features, dihedrals, theta_grid):
+    """Map one feature vector to each occupied dihedral grid point.
+
+    Returns
+    -------
+    np.ndarray
+        Shape ``(num_points, num_points, num_features)``; grid points with no
+        sampled frame are NaN.
+    """
+
+    def grid_index(theta, dtheta):
+        return round((theta + np.pi) / dtheta)
+
+    num_points = len(theta_grid)
+    dtheta = theta_grid[1] - theta_grid[0]
+    num_features = features.shape[1]
+    feature_grid = np.full((num_points, num_points, num_features), np.nan)
+
+    for dihedral, x in zip(dihedrals, features):
+        i = grid_index(dihedral[0], dtheta)
+        j = grid_index(dihedral[1], dtheta)
+        if np.isnan(feature_grid[i, j, 0]):
+            feature_grid[i, j, :] = x
+    return feature_grid
+
+
+def psi_grid_from_feature_grid(feature_grid, srv):
+    """Evaluate the SRV eigenfunctions across the occupied grid points.
+
+    The network is applied once to all occupied points (rather than one point
+    at a time), and the number of eigenfunctions is taken from the SRV output.
+
+    Returns
+    -------
+    np.ndarray
+        Shape ``(num_points, num_points, num_eigfuncs)``; empty grid points
+        are NaN.
+    """
+    num_points = feature_grid.shape[0]
+    filled = ~np.isnan(feature_grid[:, :, 0])  # (num_points, num_points)
+    psi = np.asarray(srv(feature_grid[filled]))  # (num_filled, num_eigfuncs)
+
+    psi_grid = np.full((num_points, num_points, psi.shape[1]), np.nan)
+    psi_grid[filled] = psi
+    return psi_grid

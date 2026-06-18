@@ -309,6 +309,40 @@ class WeightedGaussians(Gaussians):
         w = self.weights
         return float(w.sum() ** 2 / np.sum(w ** 2))
 
+    # ---- sampling: the KDE viewed as a GMM ---------------------------
+    # p(s) = sum_k pi_k N_k(s) with mixing proportions pi_k = mixing_weights.
+    # Each kernel has diagonal covariance, so a draw is just
+    #     s = c_k + sigma_k * z,   z ~ N(0, I_d),
+    # i.e. no scipy and no per-kernel multivariate_normal objects.
+    def _select_kernels(self, size, rng):
+        """Draw `size` kernel indices in proportion to pi_k."""
+        p = self.norms_kernels()
+        return rng.choice(len(self), size=size, p=p / p.sum())
+
+    def random(self, rng=None):
+        """Draw a single sample s ~ p(s).  Returns shape (d,)."""
+        rng = np.random if rng is None else rng
+        k = int(self._select_kernels(1, rng)[0])
+        return self.centers[k] + self.widths[k] * rng.standard_normal(self.dim)
+
+    def random_batch(self, batch_size, shuffle=False, rng=None):
+        """Draw `batch_size` samples s ~ p(s).  Returns shape (batch_size, d).
+
+        Pick one kernel per sample (with prob pi_k), then draw one
+        diagonal-Gaussian point from each.  Rows already come out in random
+        kernel order, so `shuffle` is rarely needed -- kept for API parity.
+
+        rng : np.random.Generator (or the np.random module).  Pass a seeded
+              Generator for reproducible trajectories.
+        """
+        rng = np.random if rng is None else rng
+        idx = self._select_kernels(batch_size, rng)
+        z = rng.standard_normal((batch_size, self.dim))
+        samples = self.centers[idx] + self.widths[idx] * z
+        if shuffle:
+            rng.shuffle(samples)
+        return samples
+
     # ---- addition: refine base concat with wsum reweighting ----------
     def __add__(self, other):
         """Combine two weighted estimates.  Concatenates kernels AND rescales

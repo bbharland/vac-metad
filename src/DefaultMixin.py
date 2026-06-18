@@ -1,6 +1,8 @@
 class DefaultMixin:
     """This class provides a function that replaces default values of attributes of a child class.
 
+    Note that classes are defined that further inherit from a child of DefaultMixin, and a kwarg.pop/default trick is used to replicate the behaviour set out below.
+
     Example:
     class Test(DefaultMixin):
         def __init__(self, **kwargs):

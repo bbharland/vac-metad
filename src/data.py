@@ -20,10 +20,12 @@ def simulation_data(p, subdir=None, lagframes=1):
     p : SimulationParameters or Path or str
         Determines the base directory.  A ``SimulationParameters`` also supplies
         the lagtime; a bare path/string defaults the lagtime to 1.
+
     subdir : None, int, or str
         - ``None``: use the base directory directly.
         - int ``n``: use the ``step_n`` subdirectory.
         - str: use the named subdirectory.
+
     lagframes : int
         Number of simulation frames corresponding to one lagtime.
 
@@ -50,6 +52,28 @@ def simulation_data(p, subdir=None, lagframes=1):
         raise TypeError(f"Cannot handle subdir of type {type(subdir).__name__}")
 
     return SimulationData(working_dir, lagtime, lagframes)
+
+
+def simulation_data_test(working_dir, sd, labels):
+    """Create and return a new SimulationData object at 'working_dir' for testing purposes.
+
+    It will match variables from passed SimulationData object 'sd':
+        * lagtime
+        * items from list 'labels' will be symlinked
+    """
+
+    # create new working_dir and symlinked files
+    working_dir.mkdir(parents=True, exist_ok=True)
+    for label in labels:
+        src = sd.files[label].resolve()
+        dst = working_dir / src.name
+        dst.unlink(missing_ok=True)
+        dst.symlink_to(src)
+
+    # create new SimulationData object and return it
+    sd2 = simulation_data(working_dir)
+    sd2.lagtime = sd.lagtime
+    return sd2
 
 
 class SimulationData(DataHandles):
@@ -87,6 +111,8 @@ class SimulationData(DataHandles):
         # MSM states
         "states.npy",
         "states_core.npy",
+        # Enhanced sampling
+        "weights.npy",
     ]
     other_filenames = {
         "h5file": "traj.h5",

@@ -25,7 +25,25 @@ def to_torch(a, device=None):
     return torch.tensor(a, dtype=torch.float32, device=device)
 
 
-def get_module_device(net):
+def torch_device(loud=True):
+    if loud:
+        print("PyTorch version:", torch.__version__)
+        print("CUDA version (PyTorch):", torch.version.cuda)
+        print("CUDA available:", torch.cuda.is_available())
+        print("CUDA device count:", torch.cuda.device_count())
+
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+
+    if loud:
+        print(f"Using {device=}")
+
+    return device
+
+
+def module_device(net):
     return next(net.parameters()).device
 
 
@@ -108,7 +126,7 @@ def bias_from_module(simulation, module, device=None):
     module : src.force.ForceModule
     """
     if device is None:
-        device = get_module_device(module.net)
+        device = module_device(module.net)
     r = simulation.context.getState(getPositions=True).getPositions()
     w = module(torch.tensor(r._value).to(device=device))
     return w.cpu().item()

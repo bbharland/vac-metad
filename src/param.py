@@ -5,12 +5,20 @@ import openmm.unit as unit
 from .util import kT_in_kJ_per_mol
 from .DefaultMixin import DefaultMixin
 
-# TODO: do we want directories as strings? (since openmm doesn't do pathlib)
-
 
 def param_unbiased_reference():
     """3 us simulation, June 12-17, 2026"""
     return SimulationParameters(working_dir="data/unbiased")
+
+
+def param_unbiased_weighted():
+    """3 us simulation, June 12-17, 2026, but using Weighted functions.
+
+    In case the point is to get lucky while training:
+    SRV unweighted:  lambda_1 = 1252 ps
+    SRV weighted:    lambda_1 = 1579 ps
+    """
+    return SimulationParameters(working_dir="data/verify-weighted")
 
 
 def param_unbiased_reference_350():

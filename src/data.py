@@ -8,7 +8,7 @@ import mdtraj as md
 from openmm import unit
 
 # Project-specific imports — adjust these to match your package layout.
-from .params import SimulationParameters
+from .param import SimulationParameters
 from .DataHandles import DataHandles
 
 

@@ -1,6 +1,14 @@
 # Reloading Modules
 
 ```python
+import importlib
+import src.module
+importlib.reload(src.module)
+
+from src.module import func
+```
+
+```python
 %load_ext autoreload
 %autoreload 1
 %aimport src.module_name

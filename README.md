@@ -6,4 +6,14 @@
 uv run pytest -q
 ```
 
+# Reloading modules
+
+```python
+import importlib
+import src.module
+importlib.reload(src.module)
+
+from src.module import func
+```
+
 

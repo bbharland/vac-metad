@@ -5,9 +5,8 @@ import openmm.unit as unit
 from openmm.app import PDBFile
 import mdtraj as md
 
+from .gaussians import Gaussians
 from .util import to_torch
-from .data import simulation_data
-from .dataclass import DataClass
 
 
 class SimulationCVS:
@@ -60,28 +59,19 @@ def metadynamics(temperature, bias_factor, height, width):
     ----------
     temperature : openmm.unit.quantity.Quantity
         Temperature the simulation is run at, in K.
-
     bias_factor : float
         For WTMetaD, deltaT = T * (bias_factor - 1)
-
     height : openmm.unit.quantity.Quantity
         Standard height of biasing Gaussians (will convert to kJ/mol).
-
     width : np.ndarray with shape (num_cvs,)
         The Gaussian widths along the direction of each CV.
     """
-    assert unit.is_quantity(temperature), (
-        "temperature must be a unit in K"
-    )
-    assert bias_factor > 1, (
-        f"{bias_factor = } must be greater than 1"
-    )
-    assert unit.is_quantity(height), (
-        "height must be a unit"
-    )
-    assert isinstance(width, np.ndarray) and len(width.shape) == 1, (
-        "width must be 1d np.ndarray"
-    )
+    assert unit.is_quantity(temperature), "temperature must be a unit in K"
+    assert bias_factor > 1, f"{bias_factor = } must be greater than 1"
+    assert unit.is_quantity(height), "height must be a unit"
+    assert (
+        isinstance(width, np.ndarray) and width.ndim == 1
+    ), "width must be 1d np.ndarray"
     deltaT = temperature * (bias_factor - 1)
     betap = 1 / (unit.MOLAR_GAS_CONSTANT_R * deltaT)
     betap = betap.in_units_of(unit.mole / unit.kilojoule)._value
@@ -90,70 +80,112 @@ def metadynamics(temperature, bias_factor, height, width):
 
 
 class Metadynamics:
-    """Reference:  Valsson, Tiwary, and Parrinello, "Enhancing Important Fluctuations: Rare Events and Metadynamics from a Conceptual Viewpoint", Annu. Rev. Phys. Chem. 67, 159 (2016) https://www.annualreviews.org/doi/abs/10.1146/annurev-physchem-040215-112229
+    """Well-tempered metadynamics bias, built on a Gaussians kernel sum.
+
+    Holds a growing Gaussians object (the source of truth for the deposited
+    kernels) plus the policy that governs deposition.  Evaluation of the bias
+    potential delegates to Gaussians; this class owns only the well-tempered
+    height rule, the torch bridge, and compression bookkeeping.
+
+    Reference: Valsson, Tiwary, and Parrinello, "Enhancing Important
+    Fluctuations: Rare Events and Metadynamics from a Conceptual Viewpoint",
+    Annu. Rev. Phys. Chem. 67, 159 (2016).
+    https://www.annualreviews.org/doi/abs/10.1146/annurev-physchem-040215-112229
     """
+
     def __init__(self, betap, height, width):
         """
         betap : float
-            Bias potential tempering factor
-
+            Bias potential tempering factor.
         height : float
-            Base height for Gaussians (in kJ/mol)
-
+            Base height for Gaussians (in kJ/mol).
         width : np.ndarray with shape (num_cvs,)
             The Gaussian widths along the direction of each CV.
         """
         self._betap = betap
         self._height = height
-        self._width = width
-        self.heights = np.empty(0, dtype=np.float32)
-        self.centers = np.empty((0, len(width)), dtype=np.float32)
-        self.widths = np.empty((0, len(width)), dtype=np.float32)
+        self._width = np.asarray(width, dtype=np.float32)
+        num_cvs = len(self._width)
+        # Start empty.  An empty Gaussians evaluates to 0.0, so add_gaussian's
+        # first call (bias = 0) and bias_potential both work with no guard.
+        self.gaussians = Gaussians(
+            np.empty(0, dtype=np.float32),
+            np.empty((0, num_cvs), dtype=np.float32),
+            np.empty((0, num_cvs), dtype=np.float32),
+        )
 
     def __len__(self):
-        return len(self.heights)
+        return len(self.gaussians)
+
+    # Read-only views into the held kernels.  To replace the kernels wholesale,
+    # assign to ``self.gaussians`` (e.g. the value returned by ``compress``).
+    @property
+    def heights(self):
+        return self.gaussians.heights
+
+    @property
+    def centers(self):
+        return self.gaussians.centers
+
+    @property
+    def widths(self):
+        return self.gaussians.widths
 
     def add_gaussian(self, sn):
-        """Add a new Gaussian centered at sn : ndarray with shape (num_cvs,)
+        """Deposit a new Gaussian centered at sn : ndarray, shape (num_cvs,).
+
+        Well-tempered height: h = h0 * exp(-betap * V_bias(sn)), evaluated against the bias *before* this kernel is added.
         """
-        height = np.array(
+        sn = np.asarray(sn, dtype=np.float32)
+        height = np.float32(
             self._height * np.exp(-self._betap * self.bias_potential(sn))
         )
-        self.heights = np.hstack([self.heights, height])
-        self.centers = np.vstack([self.centers, sn])
-        self.widths = np.vstack([self.widths, self._width])
+        new = Gaussians(
+            np.array([height], dtype=np.float32),
+            sn.reshape(1, -1),
+            self._width.reshape(1, -1),
+        )
+        self.gaussians = self.gaussians + new
 
     def bias_potential(self, s, num_gaussians=None):
-        """Return w(s) in kJ/mol.  If num_gaussians is not None, return bias potential using only this many terms.
+        """Return V_bias(s) in kJ/mol.
+
+        If num_gaussians is not None, evaluate using only the first that many deposited kernels (useful for replaying deposition history).
         """
-        if len(self) == 0:
-            return 0.0
         if num_gaussians is None:
-            num_gaussians = len(self)
-        h = self.heights[:num_gaussians]
-        c = self.centers[:num_gaussians]
-        w = self.widths[:num_gaussians]
-        return np.sum(h * np.exp(-0.5 * np.sum(((s - c) / w)**2, axis=1)))
+            return self.gaussians(s)
+        return self.gaussians[:num_gaussians](s)
+
+    def compress(self, dist_threshold=1.0, loud=True):
+        """Return a new Metadynamics with nearby kernels merged.
+
+        Same policy params, with the kernel set replaced by the compressed
+        Gaussians.  Replaces the old standalone kde_compression(metad) helper.
+        """
+        new = Metadynamics(self._betap, self._height, self._width)
+        new.gaussians = self.gaussians.compress(
+            dist_threshold=dist_threshold, loud=loud
+        )
+        return new
 
     def force_module(self, net):
-        """Factory function for openmm-torch ForceModule
+        """Factory for the openmm-torch ForceModule.
 
         Parameters
         ----------
-        net : torch.nn.modules.container.Sequential
-            The network that transforms features -> collective variables.  This needs to be in inference mode (i.e. all parameters are set to requires_grad = False)
+        net : torch.nn.Sequential
+            Network mapping features -> collective variables, in inference mode
+            (all parameters requires_grad = False).
 
         Returns
         -------
-        ForceModule(torch.nn.Module)
+        ForceModule
             The module to be compiled and added to the simulation.
         """
-        assert len(self) > 0, (
-            "Can't deal with empty metad object"
-        )
+        assert len(self) > 0, "Can't deal with empty metad object"
+
         dtype = torch.float32
         width = torch.tensor(self._width, dtype=dtype).unsqueeze(0)
-
         heights = torch.tensor(self.heights, dtype=dtype)
         centers = torch.tensor(self.centers, dtype=dtype)
         widths = torch.tensor(self.widths, dtype=dtype)

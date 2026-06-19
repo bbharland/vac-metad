@@ -80,7 +80,7 @@ class SimulationParameters(DefaultMixin):
         # assuming we always report once per frame
         self.report_interval = self.timesteps_per_frame
 
-        self.ns_per_frame = self.lagtime.value_in_unit(unit.nanosecond)
+        self.ns_per_frame = self.lagtime / unit.nanosecond
 
         # string for labeling simulation output
         self.ns = f"{self.ns_per_frame * self.num_frames:.1f}"

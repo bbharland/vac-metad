@@ -74,8 +74,8 @@ def metadynamics(temperature, bias_factor, height, width):
     ), "width must be 1d np.ndarray"
     deltaT = temperature * (bias_factor - 1)
     betap = 1 / (unit.MOLAR_GAS_CONSTANT_R * deltaT)
-    betap = betap.in_units_of(unit.mole / unit.kilojoule)._value
-    height = height.in_units_of(unit.kilojoule / unit.mole)._value
+    betap = betap / (unit.mole / unit.kilojoule)
+    height = height / (unit.kilojoule / unit.mole)
     return Metadynamics(betap, height, width)
 
 
@@ -113,9 +113,33 @@ class Metadynamics:
             np.empty((0, num_cvs), dtype=np.float32),
             np.empty((0, num_cvs), dtype=np.float32),
         )
+        # index into self.gaussians where the current step's deposits begin
+        self._step_start = 0
 
     def __len__(self):
         return len(self.gaussians)
+
+    def reset(self, gaussians):
+        """Replace the kernel set and mark the start of a new step.
+
+        Typically called at the start of a step with the compressed state from
+        the previous step, e.g. ``metad.reset(load_gaussians(prev/'current.npz'))``.
+        Everything deposited after this call is the current step's contribution
+        (see ``step_deposits``).
+        """
+        assert gaussians.dim == len(self._width), (
+            f"CV-dimension mismatch: gaussians.dim={gaussians.dim}, "
+            f"expected {len(self._width)}"
+        )
+        self.gaussians = gaussians
+        self._step_start = len(gaussians)
+
+    @property
+    def step_deposits(self):
+        """The Gaussians deposited since the last reset (this step only,
+        uncompressed).  Save this for the per-step log.
+        """
+        return self.gaussians[self._step_start:]
 
     # Read-only views into the held kernels.  To replace the kernels wholesale,
     # assign to ``self.gaussians`` (e.g. the value returned by ``compress``).
@@ -202,6 +226,8 @@ class ForceModule(torch.nn.Module):
         TODO: Figure out a way to turn off autodiff during 'add_gaussian()'?  Until then, Metadynamics object has to handle this.
 
         TODO: Figure out a way to initialize with no Gaussians?
+
+        Claude: One thing worth flagging beyond the immediate fix: growing self.heights/centers/widths inside forward is the fragile part of this design (it's also what your own TODO: turn off autodiff during add_gaussian is circling). The reshape patch makes it correct, but if this keeps biting you, the sturdier pattern is to deposit on the Python Metadynamics side and rebuild/reload the force module's buffers from it, rather than mutating buffers through scripted global parameters. Not necessary today — just where I'd look if the deposition path stays brittle.
     """
     def __init__(self, net, heights, centers, width, widths):
         """
@@ -253,13 +279,20 @@ class ForceModule(torch.nn.Module):
         potential : torch.Scalar
            The potential energy (in kJ/mol)
         """
+        # if add_gaussian:
+        #     device = self.heights.device
+        #     h = height.to(device=device)
+        #     c = torch.stack([center1, center2]).to(device=device)
+        #     self.heights = torch.cat([self.heights, h.unsqueeze(0)], dim=0)
+        #     self.centers = torch.cat([self.centers, c.unsqueeze(0)], dim=0)
+        #     self.widths = torch.cat([self.widths, self.width], dim=0)
         if add_gaussian:
             device = self.heights.device
-            h = height.to(device=device)
-            c = torch.stack([center1, center2]).to(device=device)
-            self.heights = torch.cat([self.heights, h.unsqueeze(0)], dim=0)
-            self.centers = torch.cat([self.centers, c.unsqueeze(0)], dim=0)
-            self.widths = torch.cat([self.widths, self.width], dim=0)
+            h = height.reshape(1).to(device=device)
+            c = torch.stack([center1, center2]).reshape(1, -1).to(device=device)
+            self.heights = torch.cat([self.heights, h], dim=0)
+            self.centers = torch.cat([self.centers, c], dim=0)
+            self.widths  = torch.cat([self.widths, self.width], dim=0)
 
         x = self.featurize(positions)
         s = self.net(x)

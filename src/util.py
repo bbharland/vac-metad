@@ -152,7 +152,7 @@ def bias_from_context(simulation, force_group_id):
 def kT_in_kJ_per_mol(temperature):
     assert unit.is_quantity(temperature), "temperature must be a unit in K"
     kT = unit.MOLAR_GAS_CONSTANT_R * temperature
-    return kT.in_units_of(unit.kilojoule / unit.mole)._value
+    return kT / (unit.kilojoule / unit.mole)
 
 
 # --------------------------------------------------------------------------- #

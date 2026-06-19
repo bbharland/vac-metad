@@ -142,7 +142,7 @@ class KDE:
             self(np.array([x[i], y[j]])) for i, j in zip(ix, iy)
         ])
 
-    def compress(self, dist_threshold=1, loud=True):
+    def compressed(self, dist_threshold=1, loud=True):
         """Return a compressed KDE object.
 
         Reason for tqdm: with dist_threshold=1,

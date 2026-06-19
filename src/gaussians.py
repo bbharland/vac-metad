@@ -225,7 +225,7 @@ class Gaussians:
         return float(np.mean(self.evaluate(pts)))
 
     # ---- compression (greedy moment-matching merge) ------------------
-    def compress(self, dist_threshold=1.0, loud=True):
+    def compressed(self, dist_threshold=1.0, loud=True):
         """Return a new Gaussians with nearby kernels merged.
 
         Greedy and inherently sequential; O(N * surviving_kernels). The
@@ -412,9 +412,9 @@ class WeightedGaussians(Gaussians):
         # None + wg (iterating frames) and 0 + wg (sum())
         return self if (other is None or other == 0) else self.__add__(other)
 
-    # ---- compress: keep it a WeightedGaussians, carry wsum forward ----
-    def compress(self, dist_threshold=1.0, loud=True):
-        g = super().compress(dist_threshold=dist_threshold, loud=loud)
+    # ---- compressed: keep it a WeightedGaussians, carry wsum forward ----
+    def compressed(self, dist_threshold=1.0, loud=True):
+        g = super().compressed(dist_threshold=dist_threshold, loud=loud)
         return WeightedGaussians(g.heights, g.centers, g.widths, wsum=self.wsum)
 
     # ---- persistence: also carry wsum (omitted from the file if None) ----

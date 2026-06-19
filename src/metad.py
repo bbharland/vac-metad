@@ -142,7 +142,7 @@ class Metadynamics:
         return self.gaussians[self._step_start:]
 
     # Read-only views into the held kernels.  To replace the kernels wholesale,
-    # assign to ``self.gaussians`` (e.g. the value returned by ``compress``).
+    # assign to ``self.gaussians`` (e.g. the value returned by ``compressed``).
     @property
     def heights(self):
         return self.gaussians.heights
@@ -180,14 +180,14 @@ class Metadynamics:
             return self.gaussians(s)
         return self.gaussians[:num_gaussians](s)
 
-    def compress(self, dist_threshold=1.0, loud=True):
+    def compressed(self, dist_threshold=1.0, loud=True):
         """Return a new Metadynamics with nearby kernels merged.
 
         Same policy params, with the kernel set replaced by the compressed
         Gaussians.  Replaces the old standalone kde_compression(metad) helper.
         """
         new = Metadynamics(self._betap, self._height, self._width)
-        new.gaussians = self.gaussians.compress(
+        new.gaussians = self.gaussians.compressed(
             dist_threshold=dist_threshold, loud=loud
         )
         return new

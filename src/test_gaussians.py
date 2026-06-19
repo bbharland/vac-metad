@@ -220,7 +220,7 @@ def kde_compression_reference(heights, centers, widths, dist_threshold=1.0):
 
     This mirrors the long-trusted implementation; it depends only on
     gaussians.Gaussian (same merge + Mahalanobis distance) so it can serve as
-    an independent oracle for Gaussians.compress.
+    an independent oracle for Gaussians.compressed.
 
     Reference: Supplementary Information for M. Invernizzi, P. M. Piaggi, and
     M. Parrinello, "Unified Approach to Enhanced Sampling", Phys. Rev. X 10,
@@ -254,7 +254,7 @@ class TestCompression:
     def test_matches_reference(self, seed, threshold):
         rng = np.random.default_rng(seed)
         g = random_set(60, rng)
-        out = g.compress(dist_threshold=threshold, loud=False)
+        out = g.compressed(dist_threshold=threshold, loud=False)
         ref_h, ref_c, ref_w = kde_compression_reference(
             g.heights, g.centers, g.widths, dist_threshold=threshold
         )
@@ -266,19 +266,19 @@ class TestCompression:
         # every merge does h = h1 + h2, so sum of heights is invariant
         rng = np.random.default_rng(3)
         g = random_set(80, rng)
-        out = g.compress(dist_threshold=1.5, loud=False)
+        out = g.compressed(dist_threshold=1.5, loud=False)
         assert out.heights.sum() == pytest.approx(g.heights.sum())
         assert len(out) <= len(g)
 
     def test_tiny_threshold_keeps_all_kernels(self):
         rng = np.random.default_rng(4)
         g = random_set(30, rng)  # distinct centers
-        out = g.compress(dist_threshold=1e-9, loud=False)
+        out = g.compressed(dist_threshold=1e-9, loud=False)
         assert len(out) == len(g)
         npt.assert_allclose(np.sort(out.heights), np.sort(g.heights))
 
     def test_huge_threshold_collapses_to_one(self, simple_set):
-        out = simple_set.compress(dist_threshold=1e6, loud=False)
+        out = simple_set.compressed(dist_threshold=1e6, loud=False)
         assert len(out) == 1
         assert out.heights[0] == pytest.approx(simple_set.heights.sum())
 
@@ -367,7 +367,7 @@ class TestWeightedAddition:
 class TestWeightedCompress:
     def test_returns_weighted_and_keeps_wsum(self):
         wg = random_set(40, np.random.default_rng(10), kind="weighted")
-        out = wg.compress(dist_threshold=1.5, loud=False)
+        out = wg.compressed(dist_threshold=1.5, loud=False)
         assert isinstance(out, WeightedGaussians)
         assert out.wsum == pytest.approx(wg.wsum)
 

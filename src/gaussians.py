@@ -1,5 +1,7 @@
 """Gaussian-sum machinery, numpy only.
 
+See gaussians_math.pdf
+
 Layering
 --------
 Gaussian          : a single kernel; merge + Mahalanobis distance (used by compress).
@@ -17,9 +19,9 @@ gets built from arrays via a separate bridge.
 """
 import numpy as np
 
-try:                               # progress bar is optional
+try:                                      # progress bar is optional
     from tqdm.auto import tqdm
-except ImportError:                # pragma: no cover
+except ImportError:                       # pragma: no cover
     def tqdm(iterable, **kwargs):
         return iterable
 
@@ -44,8 +46,11 @@ class Gaussian:
     def __str__(self):
         def fmt(a):
             return ", ".join(f"{v:.4f}" for v in a)
-        return (f"Gaussian with height {self.h:.4f}, "
-                f"center [{fmt(self.c)}], widths [{fmt(self.w)}]")
+
+        return (
+            f"Gaussian with height {self.h:.4f}, "
+            f"center [{fmt(self.c)}], widths [{fmt(self.w)}]"
+        )
 
     def __call__(self, s):
         return self.h * np.exp(-0.5 * self.distance(s) ** 2)
@@ -115,8 +120,9 @@ class Gaussians:
 
     def __getitem__(self, idx):
         if isinstance(idx, slice):
-            return type(self)._from_arrays(self, self.heights[idx],
-                                           self.centers[idx], self.widths[idx])
+            return type(self)._from_arrays(
+                self, self.heights[idx], self.centers[idx], self.widths[idx]
+            )
         return self.heights[idx], self.centers[idx], self.widths[idx]
 
     def __add__(self, other):
@@ -147,9 +153,8 @@ class Gaussians:
     # ---- evaluation ---------------------------------------------------
     def _eval_points(self, points):
         """points: (M, d) -> (M,).  Builds an (M, N, d) temporary."""
-        diff = (points[:, None, :] - self.centers[None, :, :]) \
-            / self.widths[None, :, :]
-        norm_sq = np.sum(diff ** 2, axis=2)
+        diff = (points[:, None, :] - self.centers[None, :, :]) / self.widths[None, :, :]
+        norm_sq = np.sum(diff**2, axis=2)
         return np.sum(self.heights[None, :] * np.exp(-0.5 * norm_sq), axis=1)
 
     def __call__(self, s):
@@ -170,7 +175,7 @@ class Gaussians:
             return self._eval_points(points)
         out = np.empty(len(points))
         for i in range(0, len(points), chunk_size):
-            out[i:i + chunk_size] = self._eval_points(points[i:i + chunk_size])
+            out[i : i + chunk_size] = self._eval_points(points[i : i + chunk_size])
         return out
 
     def evaluate_grid(self, xgrid, ygrid, by_row=True):
@@ -193,8 +198,9 @@ class Gaussians:
     # ---- analytical norms --------------------------------------------
     def norms_kernels(self):
         """Per-kernel analytical norm: (2pi)^(d/2) * h_k * prod(w_k)."""
-        return (2 * np.pi) ** (self.dim / 2) \
-            * self.heights * np.prod(self.widths, axis=1)
+        return (
+            (2 * np.pi) ** (self.dim / 2) * self.heights * np.prod(self.widths, axis=1)
+        )
 
     def norm(self):
         """Total analytical norm = sum of per-kernel norms."""
@@ -297,7 +303,7 @@ class WeightedGaussians(Gaussians):
     def weights(self):
         """Per-kernel statistical weight implied by the current state."""
         if self.wsum is None:
-            return self.norms_kernels()      # mixing proportions, sum -> norm()
+            return self.norms_kernels()  # mixing proportions, sum -> norm()
         return self.wsum * self.norms_kernels()
 
     @property

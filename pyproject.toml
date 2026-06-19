@@ -16,6 +16,7 @@ dependencies = [
     "openmm-cuda-13>=8.5.2",
     "openmmtorch[cuda13]>=1.5",
     "pymbar>=4.0.3",
+    "pytest>=9.1.0",
     "scikit-learn>=1.9.0",
     "tables>=3.11.1",
     "torch>=2.12.0",

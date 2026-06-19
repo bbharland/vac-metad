@@ -231,6 +231,11 @@ class Gaussians:
         Greedy and inherently sequential; O(N * surviving_kernels). The
         merge does not preserve analytical norm, so callers typically
         renormalize() afterward.
+
+        Reference: Supplementary Information for M. Invernizzi, P. M. Piaggi,
+        and M. Parrinello, "Unified Approach to Enhanced Sampling",
+        Phys. Rev. X 10, 041034 (2020).
+        https://journals.aps.org/prx/abstract/10.1103/PhysRevX.10.041034
         """
         merged = []
         params = zip(self.heights, self.centers, self.widths)
@@ -255,6 +260,38 @@ class Gaussians:
             np.vstack([g.c for g in merged]),
             np.vstack([g.w for g in merged]),
         )
+
+    # ---- persistence (.npz) ------------------------------------------
+    # Arrays only -> no scipy/torch/class needed to read the file back, in any
+    # language.  A small "type" tag lets load_gaussians() pick the right class.
+    def _npz_arrays(self):
+        """The named arrays this object serializes.  Subclasses extend this."""
+        return dict(heights=self.heights,
+                    centers=self.centers,
+                    widths=self.widths)
+
+    def save_npz(self, file):
+        """Write the kernels to a .npz file (filename, Path, or open file).
+
+        np.savez appends '.npz' to a bare filename if it lacks the extension.
+        """
+        np.savez(file, type=np.array(type(self).__name__), **self._npz_arrays())
+
+    @classmethod
+    def _from_loaded(cls, a):
+        """Build an instance from an open NpzFile ``a``."""
+        return cls(a["heights"], a["centers"], a["widths"])
+
+    @classmethod
+    def from_npz(cls, file):
+        """Reconstruct an instance of this class from a .npz written by save_npz.
+
+        Constructs the class it is called on (``Gaussians.from_npz`` -> a plain
+        Gaussians, dropping any stored wsum).  Use the module-level
+        ``load_gaussians`` to reconstruct whichever type was saved.
+        """
+        with np.load(file, allow_pickle=False) as a:
+            return cls._from_loaded(a)
 
 
 # ======================================================================
@@ -287,7 +324,7 @@ class WeightedGaussians(Gaussians):
         centers = np.asarray(centers)
         widths = np.asarray(widths)
         if wsum is None:
-            wsum = float(weights.sum())
+            wsum = float(np.sum(weights))
         d = centers.shape[1]
         kernel_norm = (2 * np.pi) ** (d / 2) * np.prod(widths, axis=1)
         heights = weights / (wsum * kernel_norm)
@@ -313,7 +350,7 @@ class WeightedGaussians(Gaussians):
 
     def effective_sample_size(self):
         w = self.weights
-        return float(w.sum() ** 2 / np.sum(w ** 2))
+        return float(np.sum(w) ** 2 / np.sum(w ** 2))
 
     # ---- sampling: the KDE viewed as a GMM ---------------------------
     # p(s) = sum_k pi_k N_k(s) with mixing proportions pi_k = mixing_weights.
@@ -323,7 +360,7 @@ class WeightedGaussians(Gaussians):
     def _select_kernels(self, size, rng):
         """Draw `size` kernel indices in proportion to pi_k."""
         p = self.norms_kernels()
-        return rng.choice(len(self), size=size, p=p / p.sum())
+        return rng.choice(len(self), size=size, p=p / np.sum(p))
 
     def random(self, rng=None):
         """Draw a single sample s ~ p(s).  Returns shape (d,)."""
@@ -380,5 +417,41 @@ class WeightedGaussians(Gaussians):
         g = super().compress(dist_threshold=dist_threshold, loud=loud)
         return WeightedGaussians(g.heights, g.centers, g.widths, wsum=self.wsum)
 
+    # ---- persistence: also carry wsum (omitted from the file if None) ----
+    def _npz_arrays(self):
+        d = super()._npz_arrays()
+        if self.wsum is not None:
+            d["wsum"] = np.array(self.wsum)
+        return d
+
+    @classmethod
+    def _from_loaded(cls, a):
+        wsum = float(a["wsum"]) if "wsum" in a.files else None
+        return cls(a["heights"], a["centers"], a["widths"], wsum=wsum)
+
     def __repr__(self):
         return f"WeightedGaussians(n={len(self)}, wsum={self.wsum})"
+
+
+# ======================================================================
+# Polymorphic loader
+# ======================================================================
+_NPZ_REGISTRY = {
+    "Gaussians": Gaussians,
+    "WeightedGaussians": WeightedGaussians,
+}
+
+
+def load_gaussians(file):
+    """Load a Gaussians or WeightedGaussians from a .npz, dispatching on the
+    stored type tag.  At the call site you don't need to know which subclass
+    was saved:
+
+        g = load_gaussians("run1.npz")
+
+    Falls back to Gaussians for files with no (or an unknown) type tag.
+    """
+    with np.load(file, allow_pickle=False) as a:
+        tag = str(a["type"]) if "type" in a.files else "Gaussians"
+        cls = _NPZ_REGISTRY.get(tag, Gaussians)
+        return cls._from_loaded(a)

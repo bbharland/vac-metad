@@ -113,6 +113,7 @@ class SimulationData(DataHandles):
         "states_core.npy",
         # Enhanced sampling
         "weights.npy",
+        "biases.npy"
     ]
     other_filenames = {
         "h5file": "traj.h5",

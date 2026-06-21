@@ -4,7 +4,7 @@ See gaussians_math.pdf
 
 Layering
 --------
-Gaussian          : a single kernel; merge + Mahalanobis distance (used by compressed).
+Gaussian          : a single kernel; merge + Mahalanobis distance (used by compress).
 Gaussians         : a set of kernels; the evaluation engine + pure geometry
                     (evaluate at point/dataset/grid, norms, compress, ...).
                     Primary data is ``heights`` -- this serves a Metadynamics
@@ -82,8 +82,13 @@ class Gaussian:
         return self.h * np.exp(-0.5 * self.distance(s) ** 2)
 
     def __add__(self, other):
-        """Merge two kernels by matching mass (height-sum) and the first two
-        moments per dimension.  This is the Parrinello compression merge.
+        """Merge two kernels: sum the heights and match the height-weighted
+        mean and second moment per dimension (the Parrinello/OPES merge).
+
+        NB: height-weighting reproduces the true (mass-weighted) moments of the
+        merged density only when the two kernels share the same width-product
+        prod(w); otherwise it is an approximation, and the merge never conserves
+        the analytical norm.  See ``Gaussians.compressed``.
         """
         height = self.h + other.h
         center = (self.h * self.c + other.h * other.c) / height
@@ -273,9 +278,11 @@ class Gaussians:
     def compressed(self, dist_threshold=1.0, loud=True):
         """Return a new Gaussians with nearby kernels merged.
 
-        Greedy and inherently sequential; O(N * surviving_kernels). The
-        merge does not preserve analytical norm, so callers typically
-        renormalize() afterward.
+        Greedy and inherently sequential; O(N * surviving_kernels).  Each merge
+        is the OPES height-weighted moment match (see ``Gaussian.__add__``):
+        exact for the mean/covariance only while merged kernels share a
+        width-product, and it never conserves the analytical norm -- so callers
+        must ``renormalize()`` afterward to restore norm() == 1.
 
         Reference: Supplementary Information for M. Invernizzi, P. M. Piaggi,
         and M. Parrinello, "Unified Approach to Enhanced Sampling",
@@ -399,8 +406,9 @@ class WeightedGaussians(Gaussians):
 
     # ---- sampling: the KDE viewed as a GMM ---------------------------
     # p(s) = sum_k pi_k N_k(s) with mixing proportions pi_k = mixing_weights.
-    # Each kernel has diagonal covariance, so a draw is just
-    #     s = c_k + sigma_k * z,   z ~ N(0, I_d),
+    # Each kernel has diagonal covariance Sigma_k = diag(width_k ** 2), so a draw
+    # is just
+    #     s = c_k + width_k * z,   z ~ N(0, I_d),
     # i.e. no scipy and no per-kernel multivariate_normal objects.
     def _select_kernels(self, size, rng):
         """Draw `size` kernel indices in proportion to pi_k."""

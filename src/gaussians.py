@@ -18,12 +18,38 @@ The torch/TorchScript bias module is deliberately NOT in this hierarchy -- it
 gets built from arrays via a separate bridge.
 """
 import numpy as np
+from functools import partial
+
+from grid2d import grid_from_arrays
 
 try:                                      # progress bar is optional
     from tqdm.auto import tqdm
 except ImportError:                       # pragma: no cover
     def tqdm(iterable, **kwargs):
         return iterable
+
+
+def _sum_at_points(points, heights, centers, widths):
+    """Sum of unnormalized 2D Gaussians at ``points`` (M, 2) -> (M,).
+
+    Single source of truth for the evaluation math.  Kept at module level (no
+    ``self``) so that it -- and the thin ``_gaussians_eval_point`` adapter below
+    -- are picklable and can be shipped to multiprocessing workers.  Convention:
+    ``widths`` are per-axis widths; kernels are unnormalized (peak = height).
+    """
+    points = np.asarray(points, dtype=float)
+    diff = (points[:, None, :] - centers[None, :, :]) / widths[None, :, :]
+    norm_sq = np.sum(diff ** 2, axis=2)
+    return np.sum(heights[None, :] * np.exp(-0.5 * norm_sq), axis=1)
+
+
+def _gaussians_eval_point(a, b, heights, centers, widths):
+    """Sum-of-Gaussians value at the single point (a, b) -> float.
+
+    Picklable adapter over ``_sum_at_points`` for grid2d's scalar-func grid path.
+    """
+    point = np.array([[a, b]], dtype=float)
+    return float(_sum_at_points(point, heights, centers, widths)[0])
 
 
 # ======================================================================
@@ -153,16 +179,15 @@ class Gaussians:
     # ---- evaluation ---------------------------------------------------
     def _eval_points(self, points):
         """points: (M, d) -> (M,).  Builds an (M, N, d) temporary."""
-        diff = (points[:, None, :] - self.centers[None, :, :]) / self.widths[None, :, :]
-        norm_sq = np.sum(diff**2, axis=2)
-        return np.sum(self.heights[None, :] * np.exp(-0.5 * norm_sq), axis=1)
+        return _sum_at_points(points, self.heights, self.centers, self.widths)
 
     def __call__(self, s):
         """Single point s:(d,) -> float; or a batch s:(M, d) -> (M,)."""
         s = np.asarray(s)
         if s.ndim == 1:
-            norm_sq = np.sum(((s - self.centers) / self.widths) ** 2, axis=1)
-            return float(np.sum(self.heights * np.exp(-0.5 * norm_sq)))
+            return _gaussians_eval_point(
+                s[0], s[1], self.heights, self.centers, self.widths
+            )
         return self.evaluate(s)
 
     def evaluate(self, points, chunk_size=None):
@@ -178,22 +203,42 @@ class Gaussians:
             out[i : i + chunk_size] = self._eval_points(points[i : i + chunk_size])
         return out
 
-    def evaluate_grid(self, xgrid, ygrid, by_row=True):
+    def evaluate_grid(self, xgrid, ygrid, by_row=True, processes=None):
         """Evaluate over the regular grid (xgrid x ygrid) -> (len(ygrid), len(xgrid)).
 
         Orientation matches imshow/contourf: rows index y, columns index x.
         by_row keeps memory at (len(xgrid), N) instead of (nx*ny, N).
+
+        processes : int or None
+            None -> single-process, vectorized over kernels (default, fast).
+            int  -> distribute the grid across worker processes via
+                    grid2d.grid_from_arrays.  Note this path evaluates the
+                    grid point-by-point (it loses the vectorization over the N
+                    kernels and pickles the kernel arrays to the workers), so it
+                    is only worth it for heavy per-point work / very large grids.
         """
         xgrid, ygrid = np.asarray(xgrid), np.asarray(ygrid)
-        if by_row:
-            out = np.empty((len(ygrid), len(xgrid)))
-            for j, y in enumerate(ygrid):
-                row = np.column_stack([xgrid, np.full(len(xgrid), y)])
-                out[j] = self._eval_points(row)
-            return out
-        X, Y = np.meshgrid(xgrid, ygrid)
-        pts = np.column_stack([X.ravel(), Y.ravel()])
-        return self._eval_points(pts).reshape(X.shape)
+
+        if processes is None:
+            if by_row:
+                out = np.empty((len(ygrid), len(xgrid)))
+                for j, y in enumerate(ygrid):
+                    row = np.column_stack([xgrid, np.full(len(xgrid), y)])
+                    out[j] = self._eval_points(row)
+                return out
+            X, Y = np.meshgrid(xgrid, ygrid)
+            pts = np.column_stack([X.ravel(), Y.ravel()])
+            return self._eval_points(pts).reshape(X.shape)
+
+        # Multiprocessing path via grid2d.  grid_from_arrays returns
+        # z[i, j] = f(xgrid[i], ygrid[j]) with shape (nx, ny); transpose to the
+        # (ny, nx) imshow orientation this method documents.
+        func = partial(
+            _gaussians_eval_point,
+            heights=self.heights, centers=self.centers, widths=self.widths,
+        )
+        z = grid_from_arrays(xgrid, ygrid, func, processes=processes, by_row=by_row)
+        return np.asarray(z).T
 
     # ---- analytical norms --------------------------------------------
     def norms_kernels(self):

@@ -9,10 +9,10 @@ class KDE:
 
     Therefore, be careful with functions that check numerical norms (hist2d.grid_norm)
     """
-    def __init__(self, centers, widths, heights, wsum=None):
+    def __init__(self, heights, centers, widths, wsum=None):
+        self.heights = heights
         self.centers = centers
         self.widths = widths
-        self.heights = heights
         self.wsum = wsum
 
     @classmethod
@@ -21,12 +21,13 @@ class KDE:
             f'Incorrect file extension {file.suffix} must be .npz'
         )
         a = np.load(file)
-        return cls(centers=a['centers'], widths=a['widths'],
-                   heights=a['heights'], wsum=float(a['wsum']))
+        return cls(
+            heights=a['heights'], centers=a['centers'], widths=a['widths'],
+            wsum=float(a['wsum'])
+        )
 
     def savez(self, file):
-        np.savez(file, centers=self.centers, widths=self.widths,
-                 heights=self.heights, wsum=self.wsum)
+        np.savez(file, heights=self.heights, centers=self.centers, widths=self.widths, wsum=self.wsum)
 
     def save_pickle(self, file):
         save_pickle(file, self)
@@ -53,9 +54,9 @@ class KDE:
         return np.sum(self.heights * np.exp(-0.5 * norm_sqs))
 
     def __eq__(self, other):
-        return np.allclose(self.centers, other.centers) \
+        return np.allclose(self.heights,  other.heights) \
+            and np.allclose(self.centers, other.centers) \
             and np.allclose(self.widths,  other.widths) \
-            and np.allclose(self.heights,  other.heights) \
             and np.isclose(self.wsum, other.wsum)
 
     def __add__(self, other):
@@ -79,9 +80,9 @@ class KDE:
         sheights = self.wsum / wsum * self.heights
         oheights = other.wsum / wsum * other.heights
 
-        return KDE(centers=np.vstack([self.centers, other.centers]),
+        return KDE(heights=np.concatenate([sheights, oheights]),
+                   centers=np.vstack([self.centers, other.centers]),
                    widths=np.vstack([self.widths, other.widths]),
-                   heights=np.concatenate([sheights, oheights]),
                    wsum=wsum)
 
     def __radd__(self, other):

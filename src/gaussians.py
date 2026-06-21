@@ -4,7 +4,7 @@ See gaussians_math.pdf
 
 Layering
 --------
-Gaussian          : a single kernel; merge + Mahalanobis distance (used by compress).
+Gaussian          : a single kernel; merge + Mahalanobis distance (used by compressed).
 Gaussians         : a set of kernels; the evaluation engine + pure geometry
                     (evaluate at point/dataset/grid, norms, compress, ...).
                     Primary data is ``heights`` -- this serves a Metadynamics

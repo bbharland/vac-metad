@@ -1,14 +1,3 @@
-"""
-grid2d.py
-=========
-
-Generic helpers for evaluating a scalar function ``func(x_i, y_j)`` over the
-Cartesian product of two 1-D arrays, with an optional multiprocessing path.
-
-These were factored out of ``kernel.py`` so the gridding machinery can be reused
-independently of the Gaussian kernel.
-"""
-
 import numpy as np
 import multiprocessing as mp
 

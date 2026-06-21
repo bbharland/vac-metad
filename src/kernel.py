@@ -34,7 +34,7 @@ from .grid2d import grid_from_arrays
 # ----------------------------
 # Core math: single 2D Gaussian
 # ----------------------------
-def gaussian2d(points, mean, width, height):
+def gaussian2d(points, height, mean, width):
     """
     Evaluate an unnormalized 2D Gaussian kernel at one or many points:
 
@@ -44,12 +44,12 @@ def gaussian2d(points, mean, width, height):
     ----------
     points : ndarray, shape (..., 2)
         Points where to evaluate the Gaussian.
+    height : float
+        Peak value of the kernel (no normalization is applied).
     mean : array-like, shape (2,)
         Gaussian mean.
     width : array-like, shape (2,)
         Per-axis width; the covariance is diag(width ** 2).
-    height : float
-        Peak value of the kernel (no normalization is applied).
 
     Returns
     -------
@@ -65,17 +65,17 @@ def gaussian2d(points, mean, width, height):
     return height * np.exp(-0.5 * quad)
 
 
-def _gaussian2d_point(x, y, mean, width, height):
+def _gaussian2d_point(x, y, height, mean, width):
     """
     Scalar evaluation of the kernel at a single point ``(x, y)``.
 
     Defined at module level (rather than as a nested closure) so it can be
     pickled and shipped to multiprocessing workers by ``gaussian2d_grid``.
     """
-    return gaussian2d(np.array([x, y], dtype=float), mean, width, height).item()
+    return gaussian2d(np.array([x, y], dtype=float), height, mean, width).item()
 
 
-def gaussian2d_grid(x, y, mean, width, height, processes=None, by_row=True):
+def gaussian2d_grid(x, y, height, mean, width, processes=None, by_row=True):
     """
     Evaluate a single 2D Gaussian over a regular grid.
 
@@ -101,11 +101,11 @@ def gaussian2d_grid(x, y, mean, width, height, processes=None, by_row=True):
     if processes is None:
         # Fully vectorized grid build.
         xy = np.dstack(np.meshgrid(x, y, indexing="ij"))  # (numx, numy, 2)
-        return gaussian2d(xy, mean, width, height)
+        return gaussian2d(xy, height, mean, width)
 
     # Multiprocessing path (row/point evaluation). A picklable partial of the
     # module-level helper is required here.
-    func = partial(_gaussian2d_point, mean=mean, width=width, height=height)
+    func = partial(_gaussian2d_point, height=height, mean=mean, width=width)
     return grid_from_arrays(x, y, func, processes=processes, by_row=by_row)
 
 

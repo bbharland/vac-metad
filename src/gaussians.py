@@ -43,12 +43,12 @@ def _sum_at_points(points, heights, centers, widths):
     return np.sum(heights[None, :] * np.exp(-0.5 * norm_sq), axis=1)
 
 
-def _gaussians_eval_point(a, b, heights, centers, widths):
+def _gaussians_eval_point(x, y, heights, centers, widths):
     """Sum-of-Gaussians value at the single point (a, b) -> float.
 
     Picklable adapter over ``_sum_at_points`` for grid2d's scalar-func grid path.
     """
-    point = np.array([[a, b]], dtype=float)
+    point = np.array([[x, y]], dtype=float)
     return float(_sum_at_points(point, heights, centers, widths)[0])
 
 

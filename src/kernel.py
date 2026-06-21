@@ -1,6 +1,14 @@
 """
-kernel.py
-=========
+Computation involving Gaussians:
+
+    Single Gaussian:  single point        gaussian2d_pdf
+                      many points         gaussian2d_pdf
+                      grid                gaussian2d_grid
+                      grid over patch     gaussian2d_grid_over_patch
+
+    Sum of Gaussians: single point        gaussians.Gaussians.__call__
+                      many points         TO DISCUSS
+                      grid                new function importing from grid2d.py
 
 The 2D Gaussian kernel itself (``gaussian2d_pdf``) and grid evaluation of a
 single Gaussian (``gaussian2d_grid``).
@@ -12,7 +20,7 @@ The generic gridding helpers live in ``grid2d.py``; dataset evaluation lives in
 import numpy as np
 from functools import partial
 
-from grid2d import grid_from_arrays
+from .grid2d import grid_from_arrays
 
 
 # ----------------------------

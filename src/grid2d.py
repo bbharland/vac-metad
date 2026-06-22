@@ -31,6 +31,18 @@ def ranges_data(data, pad=0.07):
     return [axis_range(data[:, n]) for n in range(data.shape[1])]
 
 
+def grid1d_from_range(range, dx=None, num_points=100):
+    """Return a grid (over range) based on either:
+
+    dx : float = grid spacing
+    num_points: int = length of grid
+    """
+    if dx is not None:
+        return np.arange(*range, dx)
+    else:
+        return np.linspace(*range, num_points)
+
+
 def _compute_row(x_i, y, func):
     """Evaluate ``func(x_i, y_j)`` for every ``y_j`` in ``y`` (one grid row)."""
     return np.array([func(x_i, y_j) for y_j in y])
@@ -87,7 +99,7 @@ def _bin_edges(centers):
     return centers[0] - dx / 2, centers[-1] + dx / 2, len(centers)
 
 
-def histogram2d(x, y, data, weights=None, density=True):
+def hist2d(x, y, data, weights=None, density=True):
     """Histogram ``data`` onto a grid whose points are bin CENTERS.
 
     Parameters

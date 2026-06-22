@@ -11,7 +11,7 @@ from collections import namedtuple
 import numpy as np
 from scipy.stats import multivariate_normal
 
-from .grid2d import argopt2d, grid_norm, histogram2d, slice_from_range
+from .grid2d import argopt2d, grid_norm, hist2d, slice_from_range
 
 
 Peak = namedtuple('Peak', 'x y z')
@@ -84,13 +84,13 @@ def crop_nonzero(x, y, z, ipad=0, return_slices=False):
     return peak
 
 
-def crop_histogram2d(x, y, data, ipad=0, return_slices=False, **hist_kwargs):
+def crop_hist2d(x, y, data, ipad=0, return_slices=False, **hist_kwargs):
     """Histogram ``data`` onto grid ``(x, y)``, then crop to the nonzero region.
 
-    Convenience wrapper around ``histogram2d`` + ``crop_nonzero``. Extra keyword
-    arguments (``weights``, ``density``) are forwarded to ``histogram2d``.
+    Convenience wrapper around ``hist2d`` + ``crop_nonzero``. Extra keyword
+    arguments (``weights``, ``density``) are forwarded to ``hist2d``.
     """
-    z = histogram2d(x, y, data, **hist_kwargs)
+    z = hist2d(x, y, data, **hist_kwargs)
     return crop_nonzero(x, y, z, ipad=ipad, return_slices=return_slices)
 
 

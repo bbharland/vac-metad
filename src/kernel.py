@@ -28,7 +28,7 @@ The generic gridding helpers live in ``grid2d.py``; dataset evaluation lives in
 import numpy as np
 from functools import partial
 
-from .grid2d import grid_from_arrays
+from .grid2d import grid2d_from_arrays
 
 
 # ----------------------------
@@ -93,7 +93,7 @@ def gaussian2d_grid(x, y, height, mean, width, processes=None, by_row=True):
     mean, width, height : see gaussian2d
     processes : int or None
         If None: single-process, fully vectorized evaluation (fast).
-        If int: multiprocessing evaluation via grid2d.grid_from_arrays.
+        If int: multiprocessing evaluation via grid2d.grid2d_from_arrays.
     by_row : bool
         Only relevant if processes is not None.
 
@@ -113,7 +113,7 @@ def gaussian2d_grid(x, y, height, mean, width, processes=None, by_row=True):
     # Multiprocessing path (row/point evaluation). A picklable partial of the
     # module-level helper is required here.
     func = partial(_gaussian2d_point, height=height, mean=mean, width=width)
-    return grid_from_arrays(x, y, func, processes=processes, by_row=by_row)
+    return grid2d_from_arrays(x, y, func, processes=processes, by_row=by_row)
 
 
 # ----------------------------------------------------------------------

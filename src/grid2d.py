@@ -36,7 +36,7 @@ def _compute_row(x_i, y, func):
     return np.array([func(x_i, y_j) for y_j in y])
 
 
-def grid2d_from_arrays(x, y, func, processes=None):
+def compute_grid2d(x, y, func, processes=None):
     """Return ``z`` with shape ``(len(x), len(y))``, ``z[i, j] = func(x[i], y[j])``.
 
     Parameters

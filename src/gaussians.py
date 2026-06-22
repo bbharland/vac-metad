@@ -20,7 +20,7 @@ gets built from arrays via a separate bridge.
 import numpy as np
 from functools import partial
 
-from .grid2d import grid2d_from_arrays
+from .grid2d import compute_grid2d
 
 try:                                      # progress bar is optional
     from tqdm.auto import tqdm
@@ -217,7 +217,7 @@ class Gaussians:
         processes : int or None
             None -> single-process, vectorized over kernels (default, fast).
             int  -> distribute the grid across worker processes via
-                    grid2d.grid2d_from_arrays.  Note this path evaluates the
+                    grid2d.compute_grid2d.  Note this path evaluates the
                     grid point-by-point (it loses the vectorization over the N
                     kernels and pickles the kernel arrays to the workers), so it
                     is only worth it for heavy per-point work / very large grids.
@@ -235,14 +235,14 @@ class Gaussians:
             pts = np.column_stack([X.ravel(), Y.ravel()])
             return self._eval_points(pts).reshape(X.shape)
 
-        # Multiprocessing path via grid2d.  grid2d_from_arrays returns
+        # Multiprocessing path via grid2d.  compute_grid2d returns
         # z[i, j] = f(xgrid[i], ygrid[j]) with shape (nx, ny); transpose to the
         # (ny, nx) imshow orientation this method documents.
         func = partial(
             _gaussians_eval_point,
             heights=self.heights, centers=self.centers, widths=self.widths,
         )
-        z = grid2d_from_arrays(xgrid, ygrid, func, processes=processes, by_row=by_row)
+        z = compute_grid2d(xgrid, ygrid, func, processes=processes, by_row=by_row)
         return np.asarray(z).T
 
     # ---- analytical norms --------------------------------------------

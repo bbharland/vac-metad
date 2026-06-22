@@ -98,7 +98,12 @@ def auto_window(tau_int_running, c_window=5.0):
     """Madras-Sokal automatic window: smallest M with M >= c_window*tau_int(M)."""
     m = np.arange(tau_int_running.size)
     ok = m >= c_window * tau_int_running
-    return int(np.argmax(ok)) if ok.any() else tau_int_running.size - 1
+    if not ok.any():
+        print("[warn] Sokal window never closed; using the full series "
+              "(tau may be tail-contaminated). Use a longer trajectory or "
+              "a smaller c_window.")
+        return tau_int_running.size - 1
+    return int(np.argmax(ok))
 
 
 def _integrated_time(ct, lagtime, c_window=5.0):
@@ -187,7 +192,7 @@ def compute_theta(ct, lagtime, ct_err=None):
     t = lagtime * np.arange(ct.size)
     lnC = np.log(np.where(ct > 0.0, ct, np.nan))        # mask C <= 0
     theta = np.full_like(ct, np.nan)
-    good = np.isfinite(lnC) & (lnC != 0.0)              # drop tau=0 (lnC=0)
+    good = np.isfinite(lnC) & (lnC < 0.0)              # keep 0 < C < 1 only
     theta[good] = -t[good] / lnC[good]
     if ct_err is None:
         return theta
@@ -223,14 +228,18 @@ def compute_acf_with_errors(u, lagtime, num_frames_acf, num_blocks=8,
     else:
         u = np.asarray(u)
         L = u.size // num_blocks
-        if L < num_frames_acf:
-            print(f"[warn] block length {L} < num_frames_acf "
-                  f"{num_frames_acf}; reduce num_blocks or lags.")
         blocks = [u[i * L:(i + 1) * L] for i in range(num_blocks)]
+
+    # Cap the number of lags at the shortest block so every block returns an
+    # ACF of the same length (handles short blocks and unequal-length runs).
+    nlags = int(min(num_frames_acf, min(len(b) for b in blocks)))
+    if nlags < num_frames_acf:
+        print(f"[warn] reducing num_frames_acf {num_frames_acf} -> {nlags} "
+              f"(limited by the shortest block).")
 
     cts, taus = [], []
     for b in blocks:
-        tau_b, ct_b, _ = compute_acf(b, lagtime, num_frames_acf,
+        tau_b, ct_b, _ = compute_acf(b, lagtime, nlags,
                                      kind=kind, bias=bias, c_window=c_window)
         cts.append(ct_b)
         taus.append(tau_b)
@@ -247,16 +256,16 @@ def compute_acf_with_errors(u, lagtime, num_frames_acf, num_blocks=8,
     # Lags where every block has C<=0 are all-NaN; report NaN there quietly.
     thetas = np.vstack([compute_theta(c, lagtime) for c in cts])
     n_ok = np.sum(np.isfinite(thetas), axis=0)
-    theta_mean = np.full(num_frames_acf, np.nan)
-    theta_err = np.full(num_frames_acf, np.nan)
+    theta_mean = np.full(nlags, np.nan)
+    theta_err = np.full(nlags, np.nan)
     enough = n_ok >= 2
     theta_mean[n_ok >= 1] = np.nanmean(thetas[:, n_ok >= 1], axis=0)
     theta_err[enough] = (np.nanstd(thetas[:, enough], axis=0, ddof=1)
                          / np.sqrt(n_ok[enough]))
 
     return {
-        "lag": np.arange(num_frames_acf),
-        "time": lagtime * np.arange(num_frames_acf),
+        "lag": np.arange(nlags),
+        "time": lagtime * np.arange(nlags),
         "ct_mean": ct_mean, "ct_err": ct_err,
         "theta_mean": theta_mean, "theta_err": theta_err,
         "tau_mean": float(tau_mean), "tau_err": float(tau_err),
@@ -264,12 +273,15 @@ def compute_acf_with_errors(u, lagtime, num_frames_acf, num_blocks=8,
     }
 
 
-def sokal_tau_error(tau_int_frames, window, n_frames):
+def sokal_tau_error(tau_int_frames, window, n_frames, lagtime=1.0):
     """Madras-Sokal 1-sigma error on the integrated time (single trajectory):
         sigma(tau_int) ~ tau_int * sqrt(2 (2M+1) / N).
-    Quick analytic estimate; prefer block/ensemble SEM when feasible.
+    Returned in units of `lagtime` (default 1.0 -> frames); pass the real
+    lagtime to get physical time.  Quick analytic estimate; prefer
+    block/ensemble SEM when feasible.
     """
-    return tau_int_frames * np.sqrt(2.0 * (2.0 * window + 1.0) / n_frames)
+    rel = np.sqrt(2.0 * (2.0 * window + 1.0) / n_frames)
+    return lagtime * tau_int_frames * rel
 
 
 def compute_acf_original(u, lagtime, num_frames_acf):

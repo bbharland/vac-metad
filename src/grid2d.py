@@ -82,7 +82,7 @@ def grid_norm(x, y, z):
 # --------------------------------------------------------------------------- #
 
 def _bin_edges(centers):
-    """``(lo, hi, nbins)`` for uniform bins whose CENTERS are ``centers``."""
+    """``(vmin, vmax, nbins)`` for uniform bins whose CENTERS are ``centers``."""
     dx = centers[1] - centers[0]
     return centers[0] - dx / 2, centers[-1] + dx / 2, len(centers)
 
@@ -104,11 +104,11 @@ def histogram2d(x, y, data, weights=None, density=True):
     -------
     H : array, shape ``(nx, ny)``, with ``H[i, j] ~ p(x_i, y_j)``.
     """
-    xlo, xhi, xbins = _bin_edges(x)
-    ylo, yhi, ybins = _bin_edges(y)
+    xmin, xmax, xbins = _bin_edges(x)
+    ymin, ymax, ybins = _bin_edges(y)
     H, _, _ = np.histogram2d(
         data[:, 0], data[:, 1],
-        bins=[xbins, ybins], range=[[xlo, xhi], [ylo, yhi]],
+        bins=[xbins, ybins], range=[[xmin, xmax], [ymin, ymax]],
         density=density, weights=weights,
     )
     return H
@@ -119,24 +119,37 @@ def histogram2d(x, y, data, weights=None, density=True):
 # --------------------------------------------------------------------------- #
 
 def range_indexes(x, xmin, xmax):
-    """Inclusive index bounds ``(imin, imax)`` of points with ``xmin < x < xmax``."""
+    """Returns
+    -------
+    (imin, imax) : tuple of int
+        Indices of the first and last in-range elements of ``x``.
+
+    Notes
+    -----
+    Raises ``IndexError`` if no element of ``x`` falls inside the interval. If
+    ``x`` is not sorted, ``imin``/``imax`` still mark the first and last
+    in-range positions, but the span ``imin:imax + 1`` may then include
+    out-of-range points.
+    """
     inside = np.where((x > xmin) & (x < xmax))[0]
     return inside[0], inside[-1]
 
 
-def slices_from_ranges(x, y, ranges):
-    """Slices selecting the sub-grid inside ``((xmin, xmax), (ymin, ymax))``.
+def slice_from_range(x, range):
+    """Slice selecting the elements of grid axis ``x`` inside ``range = (xmin, xmax)``.
 
-    Both slices are inclusive of the last in-range point.
+    Inclusive of the last in-range point: if ``range_indexes`` reports in-range
+    index bounds ``(i0, i1)``, the returned slice is ``slice(i0, i1 + 1)`` so
+    that ``x[slice_from_range(x, range)]`` keeps the element at ``i1``.
     """
-    (xmin, xmax), (ymin, ymax) = ranges
-    ix0, ix1 = range_indexes(x, xmin, xmax)
-    iy0, iy1 = range_indexes(y, ymin, ymax)
-    return slice(ix0, ix1 + 1), slice(iy0, iy1 + 1)
+    xmin, xmax = range
+    i0, i1 = range_indexes(x, xmin, xmax)
+    return slice(i0, i1 + 1)
 
 
 def argopt2d(a, op):
-    """Index ``(i, j)`` of the min or max of 2D array ``a``. ``op`` in {'min', 'max'}."""
+    """Index ``(i, j)`` of the minimum or maximum element of a 2D array.
+    """
     if a.ndim != 2:
         raise ValueError(f'argopt2d expects a 2D array, got ndim={a.ndim}')
     try:

@@ -11,7 +11,7 @@ from collections import namedtuple
 import numpy as np
 from scipy.stats import multivariate_normal
 
-from .grid2d import argopt2d, grid_norm, histogram2d, slices_from_ranges
+from .grid2d import argopt2d, grid_norm, histogram2d, slice_from_range
 
 
 Peak = namedtuple('Peak', 'x y z')
@@ -26,8 +26,10 @@ def peak_from_range(x, y, z, ranges):
 
     Returns views into ``x``, ``y``, ``z`` (no copy).
     """
-    sx, sy = slices_from_ranges(x, y, ranges)
-    return Peak(x[sx], y[sy], z[sx, sy])
+    (xrange, yrange) = ranges
+    xslice = slice_from_range(x, xrange)
+    yslice = slice_from_range(y, yrange)
+    return Peak(x[xslice], y[yslice], z[xslice, yslice])
 
 
 def peaks_from_ranges(x, y, z, ranges):
@@ -36,10 +38,31 @@ def peaks_from_ranges(x, y, z, ranges):
 
 
 def argopt2d_in_range(x, y, z, ranges, op):
-    """Index ``(i, j)`` into the *full* grid of the min/max of ``z`` within ``ranges``."""
-    sx, sy = slices_from_ranges(x, y, ranges)
-    i, j = argopt2d(z[sx, sy], op)
-    return i + sx.start, j + sy.start
+    """Locate the min/max of ``z`` within a coordinate window, in full-grid indices.
+
+    Restricts the search to the sub-grid inside ``ranges = ((xmin, xmax),
+    (ymin, ymax))``, finds the argmin/argmax there with ``argopt2d``, then
+    shifts the local indices back into the original full grid by adding each
+    slice's start offset. So the returned ``(i, j)`` index ``z`` directly, not
+    the cropped sub-grid.
+
+    Parameters
+    ----------
+    x, y : array, shape ``(nx,)``, ``(ny,)``
+    z : array, shape ``(nx, ny)``
+    ranges : ((xmin, xmax), (ymin, ymax))
+    op : {'min', 'max'}
+
+    Returns
+    -------
+    (i, j) : tuple of int
+        Indices into the full ``z`` of the extremum within ``ranges``.
+    """
+    xrange, yrange = ranges
+    xslice = slice_from_range(x, xrange)
+    yslice = slice_from_range(y, yrange)
+    i, j = argopt2d(z[xslice, yslice], op)
+    return i + xslice.start, j + yslice.start
 
 
 # --------------------------------------------------------------------------- #

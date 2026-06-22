@@ -329,4 +329,3 @@ class ForceModule(torch.nn.Module):
         """
         norm_sqs = torch.sum(torch.square((s - self.centers) / self.widths), 1)
         return torch.sum(self.heights * torch.exp(-0.5 * norm_sqs))
-

@@ -48,3 +48,38 @@ def rayleigh_quotient(u, lagframes=1):
     u0 = u[:-lagframes]
     uk = u[lagframes:]
     return np.mean(u0 * uk) / np.mean(u0 * u0)
+
+
+def kl_divergence(p, q, dx=1):
+    """KL(p||q) is only defined if q(x) = 0 implies that p(x) = 0
+    Order does matter here since simulation histograms will have 0's!
+
+            KL(p||q) = sum( dx p(x) log(p(x) / q(x)) )
+
+    Parameters:
+    -----------
+    p, q : arrays with shape (num_points,) or (num_points, num_points)
+        Either 1D or 2D probability distributions
+    dx : float
+        The area element = dx (1D) or dx * dy (2D)
+    """
+    mask = (p != 0) & (q != 0)
+    return dx * np.sum(p[mask] * np.log(p[mask] / q[mask]))
+# def kl_divergence(p ,q):
+#     with np.errstate(divide='ignore', invalid='ignore'):
+#         div = p * np.log(p / q)
+#         div[np.isinf(div) | np.isneginf(div) | np.isnan(div)] = 0
+#         return div.sum()
+
+
+def mse(p, q, dx=1):
+    """MSE(p, q) = sum( dx MSE(p(x) - q(x))
+
+    Parameters:
+    -----------
+    p, q : arrays with shape (num_points,) or (num_points, num_points)
+        Either 1D or 2D probability distributions
+    dx : float
+        The area element = dx (1D) or dx * dy (2D)
+    """
+    return dx * np.sum((p - q) ** 2)

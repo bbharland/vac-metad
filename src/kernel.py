@@ -34,7 +34,7 @@ from .grid2d import grid_from_arrays
 # ----------------------------
 # Core math: single 2D Gaussian
 # ----------------------------
-def gaussian2d(points, height, mean, width):
+def gaussian2d(points, height, mean, width, dtype=np.float64):
     """
     Evaluate an unnormalized 2D Gaussian kernel at one or many points:
 
@@ -50,15 +50,22 @@ def gaussian2d(points, height, mean, width):
         Gaussian mean.
     width : array-like, shape (2,)
         Per-axis width; the covariance is diag(width ** 2).
+    dtype : numpy dtype, optional
+        Floating precision of the evaluation. Default np.float64. Pass
+        np.float32 to halve memory traffic (and roughly double throughput on
+        bandwidth-bound callers) at float32 accuracy. ``height`` is cast to this
+        dtype as well, so the returned array always has dtype ``dtype`` rather
+        than being silently upcast by numpy scalar promotion.
 
     Returns
     -------
-    vals : ndarray, shape points.shape[:-1]
+    vals : ndarray, shape points.shape[:-1], dtype ``dtype``
         Gaussian values at each point.
     """
-    points = np.asarray(points, dtype=float)
-    mean = np.asarray(mean, dtype=float).reshape(2,)
-    width = np.asarray(width, dtype=float).reshape(2,)
+    points = np.asarray(points, dtype=dtype)
+    mean = np.asarray(mean, dtype=dtype).reshape(2,)
+    width = np.asarray(width, dtype=dtype).reshape(2,)
+    height = np.asarray(height, dtype=dtype)
 
     d = points - mean
     quad = (d[..., 0] / width[0]) ** 2 + (d[..., 1] / width[1]) ** 2

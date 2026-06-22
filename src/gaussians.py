@@ -20,7 +20,7 @@ gets built from arrays via a separate bridge.
 import numpy as np
 from functools import partial
 
-from grid2d import grid_from_arrays
+from .grid2d import grid_from_arrays
 
 try:                                      # progress bar is optional
     from tqdm.auto import tqdm

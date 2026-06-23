@@ -90,3 +90,60 @@ def plot_eigfuncs(fig, axs, theta, psi_grid, timescales):
         ax.text(1.4, 1.2, f'{timescale:.1f} {units}')
 
 
+def plot_histogram(*args, **kwargs):
+    """Plot 2D histogram.  This now wraps 'plot_colormesh'.
+    """
+    # if kwargs['cvs'] and 'vmax' not in kwargs:
+    #     kwargs['vmax'] = 0.7
+    if 'cmap' not in kwargs:
+        kwargs['cmap'] = 'viridis'
+    cb = plot_surface(*args, **kwargs)
+    return cb
+
+
+def plot_surface(ax, x, y, z, cvs=False, dih=False, vmin=None, vmax=None, label='', pos=None, pad=0.1, cmap='magma'):
+    """Plot z = f(x, y)
+
+    Parameters
+    ----------
+    x : array with shape (nx,)
+    y : array with shape (ny,)
+    z : array with shape (nx, ny)
+
+    cvs : Bool
+        If True, axes are 's1', 's2'
+    dih : Bool
+        If True, axes are 'phi', 'psi'.  If both cvs and dih are False, axes are 'x', 'y'
+    vmin, vmax : float
+        If None, set to np.min(z) or np.max(z)
+    label : str
+        If not None, will be displayed on graph at position, pos
+    pos : [float, float]
+        If label and pos are both not None, location of label
+    pad : float
+        If label is not None but pos is, then this will determine how far from the edge of the graph the label will appear.
+    """
+    def spos(x, pad):
+        return min(x) + pad * np.ptp(x)
+
+    if vmin is None:
+        vmin = np.min(z)
+    if vmax is None:
+        vmax = np.max(z)
+    if cvs:
+        ax.set_xlabel("$s_1$", fontsize=14)
+        ax.set_ylabel("$s_2$", fontsize=14, rotation=0)
+    elif dih:
+        ax.set_xlabel("$\\phi$", fontsize=14)
+        ax.set_ylabel("$\\psi$", fontsize=14, rotation=0)
+    else:
+        ax.set_xlabel("$x$", fontsize=14)
+        ax.set_ylabel("$y$", fontsize=14, rotation=0)
+
+    cb = ax.pcolormesh(x, y, z.T, vmin=vmin, vmax=vmax, cmap=cmap)
+    if label:
+        if pos is None:
+            pos = spos(x, pad), spos(y, pad)
+        color = 'white' if (cmap == 'viridis') else 'black'
+        ax.text(*pos, label, color=color, fontsize=12)
+    return cb

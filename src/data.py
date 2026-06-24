@@ -104,6 +104,9 @@ class SimulationData(DataHandles):
         "srv_net.pt",
         "eigvals.npy",
         "timescales.npy",
+        # Histograms for quick view of dataset
+        "dihedrals_pdf.npz",
+        "cvs_pdf.npz",
         # Data projected onto dihedral grids
         "theta_grid.npy",
         "feature_grid.npy",

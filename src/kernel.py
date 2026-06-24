@@ -17,15 +17,16 @@ caller wants.  When a *normalized* kernel is needed, the prefactor
 (see gaussians.WeightedGaussians.from_weights); it never appears inside an
 evaluation here.
 
-    gaussian2d                  single point / many points
+    gaussian2d                  single point / many points, with optional
+                                multiprocessing over chunks of a dataset
     gaussian2d_grid             full regular grid
     gaussian2d_grid_over_patch  a single Gaussian on an nwidth box of a grid
 
-The generic gridding helpers live in ``grid2d.py``; dataset evaluation lives in
-``gaussian2d_dataset.py``.
+The generic gridding helpers live in ``grid2d.py``.
 """
 
 import numpy as np
+import multiprocessing as mp
 from functools import partial
 
 from .grid2d import compute_grid2d
@@ -34,7 +35,16 @@ from .grid2d import compute_grid2d
 # ----------------------------
 # Core math: single 2D Gaussian
 # ----------------------------
-def gaussian2d(points, height, mean, width, dtype=np.float64):
+def _eval_points_chunk(points_chunk, height, mean, width):
+    """Worker: evaluate the Gaussian on one chunk of points.
+
+    Defined at module level so it can be pickled and shipped to
+    multiprocessing workers by ``gaussian2d``.
+    """
+    return gaussian2d(points_chunk, height, mean, width)
+
+
+def gaussian2d(points, height, mean, width, dtype=np.float64, processes=None):
     """
     Evaluate an unnormalized 2D Gaussian kernel at one or many points:
 
@@ -43,7 +53,8 @@ def gaussian2d(points, height, mean, width, dtype=np.float64):
     Parameters
     ----------
     points : ndarray, shape (..., 2)
-        Points where to evaluate the Gaussian.
+        Points where to evaluate the Gaussian.  When ``processes`` is not
+        None, points must have shape ``(num_points, 2)`` (a flat dataset).
     height : float
         Peak value of the kernel (no normalization is applied).
     mean : array-like, shape (2,)
@@ -53,9 +64,18 @@ def gaussian2d(points, height, mean, width, dtype=np.float64):
     dtype : numpy dtype, optional
         Floating precision of the evaluation. Default np.float64. Pass
         np.float32 to halve memory traffic (and roughly double throughput on
-        bandwidth-bound callers) at float32 accuracy. ``height`` is cast to this
-        dtype as well, so the returned array always has dtype ``dtype`` rather
-        than being silently upcast by numpy scalar promotion.
+        bandwidth-bound callers) at float32 accuracy. ``height`` is cast to
+        this dtype as well, so the returned array always has dtype ``dtype``
+        rather than being silently upcast by numpy scalar promotion.
+    processes : int or None, optional
+        If None (default): single-process, fully vectorized evaluation
+        (recommended for most use cases -- per-point work is cheap).
+        If int: the dataset is split into ``processes`` chunks and evaluated
+        in parallel via ``multiprocessing.Pool``. Requires points to have
+        shape ``(num_points, 2)``.  Note that for this kernel the
+        multiprocessing path rarely beats the vectorized path because
+        inter-process data transfer costs roughly as much as the computation
+        itself.
 
     Returns
     -------
@@ -67,9 +87,24 @@ def gaussian2d(points, height, mean, width, dtype=np.float64):
     width = np.asarray(width, dtype=dtype).reshape(2,)
     height = np.asarray(height, dtype=dtype)
 
-    d = points - mean
-    quad = (d[..., 0] / width[0]) ** 2 + (d[..., 1] / width[1]) ** 2
-    return height * np.exp(-0.5 * quad)
+    if processes is None:
+        d = points - mean
+        quad = (d[..., 0] / width[0]) ** 2 + (d[..., 1] / width[1]) ** 2
+        return height * np.exp(-0.5 * quad)
+
+    # Multiprocessing path: chunk a flat (num_points, 2) dataset.
+    p = int(processes)
+    if p <= 0:
+        raise ValueError("processes must be a positive int or None")
+    if points.ndim != 2 or points.shape[1] != 2:
+        raise ValueError(
+            "When processes is not None, points must have shape (num_points, 2)"
+        )
+    chunks = np.array_split(points, p)
+    worker = partial(_eval_points_chunk, height=height, mean=mean, width=width)
+    with mp.Pool(processes=p) as pool:
+        parts = pool.map(worker, chunks)
+    return np.concatenate(parts, axis=0)
 
 
 def _gaussian2d_point(x, y, height, mean, width):

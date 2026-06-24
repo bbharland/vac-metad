@@ -4,11 +4,12 @@ from pathlib import Path
 import datetime
 
 from .util import load_pickle, save_pickle
-
+from .dataclass import DataClass
 
 # Each handler is a (loader, saver) pair where:
 #     loader(file) -> object
 #     saver(file, obj) -> None
+
 
 def _load_npy(file):
     return np.load(file)
@@ -29,10 +30,23 @@ def _save_pt(file, obj):
     torch.save(obj, file)
 
 
+def _load_npz(file):
+    # Delegates to DataClass so the archive format (allow_pickle=False,
+    # scalar/None handling) stays owned by DataClass, mirroring _save_npz.
+    return DataClass.from_npz(file)
+
+
+def _save_npz(file, obj):
+    # Inverse of _load_npz; delegates to DataClass.savez so the archive
+    # format stays owned by DataClass.
+    obj.savez(file)
+
+
 _HANDLERS = {
     ".pickle": (load_pickle, save_pickle),
     ".npy": (_load_npy, _save_npy),
     ".pt": (_load_pt, _save_pt),
+    ".npz": (_load_npz, _save_npz),
 }
 
 

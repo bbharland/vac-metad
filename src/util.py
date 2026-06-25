@@ -5,7 +5,7 @@ import openmm.unit as unit
 import mdtraj as md
 from dataclasses import is_dataclass
 import pickle
-from pathlib import PosixPath
+from pathlib import Path
 import sys
 import time
 
@@ -296,7 +296,7 @@ def print_status_file(file, num_chars=None):
     num_chars : int
         The total number of character reserved for the file name.  The date modified appears after this many characters.  If None, use 4 spaces after the file name.
     """
-    assert isinstance(file, PosixPath), "'file' needs to be of type 'Path'"
+    assert isinstance(file, Path), "'file' needs to be of type 'Path'"
     if num_chars is None:
         whitespace = " " * 4
     else:

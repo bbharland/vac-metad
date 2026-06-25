@@ -54,6 +54,8 @@ The naive  lagtime * ct.sum()  differs in two ways: it is a left Riemann sum
 
 import numpy as np
 
+# from .dataclass import DataClass # only used for wrapper compute_acf_dc, not here.
+
 
 # --------------------------------------------------------------------------- #
 #  Low-level pieces
@@ -80,13 +82,13 @@ def _autocov_fft(du, nlags, bias="unbiased"):
     """
     n = du.shape[0]
     nlags = int(min(nlags, n))
-    nfft = 1 << (2 * n - 1).bit_length()          # next pow2 >= 2n-1
+    nfft = 1 << (2 * n - 1).bit_length()  # next pow2 >= 2n-1
     f = np.fft.fft(du, n=nfft)
-    g = np.fft.ifft(f * np.conj(f))[:nlags]       # linear autocorrelation
+    g = np.fft.ifft(f * np.conj(f))[:nlags]  # linear autocorrelation
     if np.isrealobj(du):
         g = g.real
     if bias == "unbiased":
-        g = g / (n - np.arange(nlags))            # exact # of terms per lag
+        g = g / (n - np.arange(nlags))  # exact # of terms per lag
     elif bias == "biased":
         g = g / n
     else:
@@ -99,26 +101,29 @@ def auto_window(tau_int_running, c_window=5.0):
     m = np.arange(tau_int_running.size)
     ok = m >= c_window * tau_int_running
     if not ok.any():
-        print("[warn] Sokal window never closed; using the full series "
-              "(tau may be tail-contaminated). Use a longer trajectory or "
-              "a smaller c_window.")
+        print(
+            "[warn] Sokal window never closed; using the full series "
+            "(tau may be tail-contaminated). Use a longer trajectory or "
+            "a smaller c_window."
+        )
         return tau_int_running.size - 1
     return int(np.argmax(ok))
 
 
 def _integrated_time(ct, lagtime, c_window=5.0):
     """tau (physical units) from a normalized ACF ct (ct[0]=1) via Sokal."""
-    tau_running = np.cumsum(ct) - 0.5            # tau_running[M] = 1/2 + sum_{1..M} ct
+    tau_running = np.cumsum(ct) - 0.5  # tau_running[M] = 1/2 + sum_{1..M} ct
     M = auto_window(tau_running, c_window)
-    tau_int = tau_running[M]                     # in frames
+    tau_int = tau_running[M]  # in frames
     return lagtime * tau_int, M, tau_int
 
 
 # --------------------------------------------------------------------------- #
 #  Public API
 # --------------------------------------------------------------------------- #
-def compute_acf(u, lagtime, num_frames_acf, kind="linear",
-                bias="unbiased", c_window=5.0):
+def compute_acf(
+    u, lagtime, num_frames_acf, kind="linear", bias="unbiased", c_window=5.0
+):
     """Centered, normalized autocorrelation function and relaxation time.
 
     Parameters
@@ -152,15 +157,14 @@ def compute_acf(u, lagtime, num_frames_acf, kind="linear",
     du = _embed(u, kind)
     g = _autocov_fft(du, num_frames_acf, bias=bias)
     c0 = g[0].real if np.iscomplexobj(g) else g[0]
-    ct_full = g / c0                             # complex if circular
+    ct_full = g / c0  # complex if circular
     ct = ct_full.real
     tau, M, tau_int = _integrated_time(ct, lagtime, c_window)
     info = {
         "c0": float(c0),
         "window": int(M),
         "tau_int_frames": float(tau_int),
-        "imag": (ct_full.imag if np.iscomplexobj(g)
-                 else np.zeros_like(ct)),
+        "imag": (ct_full.imag if np.iscomplexobj(g) else np.zeros_like(ct)),
     }
     return tau, ct, info
 
@@ -190,9 +194,9 @@ def compute_theta(ct, lagtime, ct_err=None):
     """
     ct = np.asarray(ct, float)
     t = lagtime * np.arange(ct.size)
-    lnC = np.log(np.where(ct > 0.0, ct, np.nan))        # mask C <= 0
+    lnC = np.log(np.where(ct > 0.0, ct, np.nan))  # mask C <= 0
     theta = np.full_like(ct, np.nan)
-    good = np.isfinite(lnC) & (lnC < 0.0)              # keep 0 < C < 1 only
+    good = np.isfinite(lnC) & (lnC < 0.0)  # keep 0 < C < 1 only
     theta[good] = -t[good] / lnC[good]
     if ct_err is None:
         return theta
@@ -202,8 +206,15 @@ def compute_theta(ct, lagtime, ct_err=None):
     return theta, theta_err
 
 
-def compute_acf_with_errors(u, lagtime, num_frames_acf, num_blocks=8,
-                            kind="linear", bias="unbiased", c_window=5.0):
+def compute_acf_with_errors(
+    u,
+    lagtime,
+    num_frames_acf,
+    num_blocks=8,
+    kind="linear",
+    bias="unbiased",
+    c_window=5.0,
+):
     """Error bars on C(tau), tau and theta(tau) by block / ensemble averaging.
 
     `u` may be either
@@ -222,25 +233,27 @@ def compute_acf_with_errors(u, lagtime, num_frames_acf, num_blocks=8,
     dict with: lag, time, ct_mean, ct_err, theta_mean, theta_err,
                tau_mean, tau_err, num_blocks.
     """
-    if isinstance(u, (list, tuple)) or (
-            isinstance(u, np.ndarray) and u.ndim == 2):
+    if isinstance(u, (list, tuple)) or (isinstance(u, np.ndarray) and u.ndim == 2):
         blocks = [np.asarray(b) for b in u]
     else:
         u = np.asarray(u)
         L = u.size // num_blocks
-        blocks = [u[i * L:(i + 1) * L] for i in range(num_blocks)]
+        blocks = [u[i * L : (i + 1) * L] for i in range(num_blocks)]
 
     # Cap the number of lags at the shortest block so every block returns an
     # ACF of the same length (handles short blocks and unequal-length runs).
     nlags = int(min(num_frames_acf, min(len(b) for b in blocks)))
     if nlags < num_frames_acf:
-        print(f"[warn] reducing num_frames_acf {num_frames_acf} -> {nlags} "
-              f"(limited by the shortest block).")
+        print(
+            f"[warn] reducing num_frames_acf {num_frames_acf} -> {nlags} "
+            f"(limited by the shortest block)."
+        )
 
     cts, taus = [], []
     for b in blocks:
-        tau_b, ct_b, _ = compute_acf(b, lagtime, nlags,
-                                     kind=kind, bias=bias, c_window=c_window)
+        tau_b, ct_b, _ = compute_acf(
+            b, lagtime, nlags, kind=kind, bias=bias, c_window=c_window
+        )
         cts.append(ct_b)
         taus.append(tau_b)
     cts = np.vstack(cts)
@@ -260,15 +273,19 @@ def compute_acf_with_errors(u, lagtime, num_frames_acf, num_blocks=8,
     theta_err = np.full(nlags, np.nan)
     enough = n_ok >= 2
     theta_mean[n_ok >= 1] = np.nanmean(thetas[:, n_ok >= 1], axis=0)
-    theta_err[enough] = (np.nanstd(thetas[:, enough], axis=0, ddof=1)
-                         / np.sqrt(n_ok[enough]))
+    theta_err[enough] = np.nanstd(thetas[:, enough], axis=0, ddof=1) / np.sqrt(
+        n_ok[enough]
+    )
 
     return {
         "lag": np.arange(nlags),
         "time": lagtime * np.arange(nlags),
-        "ct_mean": ct_mean, "ct_err": ct_err,
-        "theta_mean": theta_mean, "theta_err": theta_err,
-        "tau_mean": float(tau_mean), "tau_err": float(tau_err),
+        "ct_mean": ct_mean,
+        "ct_err": ct_err,
+        "theta_mean": theta_mean,
+        "theta_err": theta_err,
+        "tau_mean": float(tau_mean),
+        "tau_err": float(tau_err),
         "num_blocks": nb,
     }
 
@@ -285,7 +302,15 @@ def sokal_tau_error(tau_int_frames, window, n_frames, lagtime=1.0):
 
 
 def compute_acf_original(u, lagtime, num_frames_acf):
-    """Compute autocorrelation function C(t)
+    """Compute autocorrelation function C(t).
+
+    June 24, 2026
+    -------------
+    FFT 'compute_acf' was validated against this function using the unbiased 3.0 us dataset.  The curves have perfect overlap in matplotlib.
+
+        Time for FFT call = 0:02.5
+        Time for this call = 11:54
+        <|C_FFT(t) - C(t)|> = 1.5e-10
 
     Parameters
     ----------
@@ -303,6 +328,7 @@ def compute_acf_original(u, lagtime, num_frames_acf):
     ct : ndarray with shape (num_frames_acf,)
         The autocorrelation function, C(t)
     """
+
     def acf(u, frame_acf):
         if frame_acf == 0:
             return np.mean(u * u)

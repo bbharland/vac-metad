@@ -327,3 +327,13 @@ def unpack_obj(obj, obj_type="surf"):
         return obj.x, obj.y, obj.z
     else:
         raise ValueError(f"Unknown obj_type: {obj_type!r}")
+
+
+def chunk_iter(array, num_chunks):
+    """Generator for iterating through an array by (roughly) equal chunks.
+    """
+    chunk_size = len(array) // num_chunks
+    for i in range(num_chunks):
+        start = i * chunk_size
+        end = len(array) if i == num_chunks - 1 else start + chunk_size
+        yield array[start:end]

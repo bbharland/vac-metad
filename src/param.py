@@ -21,6 +21,11 @@ def param_unbiased_weighted():
     return SimulationParameters(working_dir="data/verify-weighted")
 
 
+def param_unbiased_vaccuum():
+    """3 us simulation, June 26, 2026"""
+    return SimulationParameters(working_dir="data/vacuum")
+
+
 def param_unbiased_reference_350():
     """350 ns simulation, ca Apr. 24, 2024"""
     return SimulationParameters(working_dir="data/unbiased-350")

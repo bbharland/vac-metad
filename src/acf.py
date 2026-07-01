@@ -53,8 +53,11 @@ The naive  lagtime * ct.sum()  differs in two ways: it is a left Riemann sum
 """
 
 import numpy as np
-
-# from .dataclass import DataClass # only used for wrapper compute_acf_dc, not here.
+from .dataclass import DataClass
+from .util import (
+    save_pickle,
+    load_pickle
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -339,3 +342,28 @@ def compute_acf_original(u, lagtime, num_frames_acf):
     ct = np.array([acf(u, t) for t in range(num_frames_acf)]) / c0
     tau = lagtime * np.sum(ct)
     return tau, ct
+
+
+def compute_acfs(wd, signals, lagtime, num_frames_acf, calculate=True):
+    file = wd / "acfs.pickle"
+    if calculate:
+        acfs = {
+            label: compute_acf_dataclass(u, lagtime, num_frames_acf)
+            for label, u in signals.items()
+        }
+        save_pickle(file, acfs)
+    else:
+        acfs = load_pickle(file)
+    return acfs
+
+
+def compute_acf_dataclass(*args, **kwargs):
+    tau, ct, info = compute_acf(*args, **kwargs)
+    return DataClass(
+        tau=tau,
+        ct=ct,
+        c0=info["c0"],
+        window=info["window"],
+        tau_int_frames=info["tau_int_frames"],
+        imag=info["imag"],
+    )

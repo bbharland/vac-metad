@@ -12,7 +12,7 @@ from .param import SimulationParameters
 from .DataHandles import DataHandles
 
 
-def simulation_data(p, subdir=None, lagframes=1):
+def simulation_data(p, subdir=None, lagframes=1, mmap_mode=None):
     """Build a :class:`SimulationData` for ``basedir/subdir``.
 
     Parameters
@@ -28,6 +28,11 @@ def simulation_data(p, subdir=None, lagframes=1):
 
     lagframes : int
         Number of simulation frames corresponding to one lagtime.
+
+    mmap_mode : None or str
+        If given (e.g. ``"r"``), ``.npy`` attributes such as ``features`` and
+        ``dihedrals`` are memory-mapped rather than read fully into RAM.  See
+        :class:`DataHandles`.
 
     Returns
     -------
@@ -51,7 +56,7 @@ def simulation_data(p, subdir=None, lagframes=1):
     else:
         raise TypeError(f"Cannot handle subdir of type {type(subdir).__name__}")
 
-    return SimulationData(working_dir, lagtime, lagframes)
+    return SimulationData(working_dir, lagtime, lagframes, mmap_mode=mmap_mode)
 
 
 def simulation_data_test(working_dir, sd, labels):
@@ -124,7 +129,7 @@ class SimulationData(DataHandles):
         "outfile": "traj.out",
     }
 
-    def __init__(self, working_dir, lagtime, lagframes):
+    def __init__(self, working_dir, lagtime, lagframes, mmap_mode=None):
         """Parameters
         ----------
         working_dir : str or Path
@@ -133,8 +138,11 @@ class SimulationData(DataHandles):
             Time separating transitions (tau, in ps).
         lagframes : int
             Number of simulation frames making up one lagtime.
+        mmap_mode : None or str
+            Forwarded to :class:`DataHandles`; if given, ``.npy`` files are
+            memory-mapped in that mode instead of read into RAM.
         """
-        super().__init__(working_dir)
+        super().__init__(working_dir, mmap_mode=mmap_mode)
         self.lagtime = lagtime
         self.lagframes = lagframes
 

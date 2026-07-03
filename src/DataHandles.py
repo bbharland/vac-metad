@@ -80,15 +80,21 @@ class DataHandles:
                     f"{cls.__name__} must define class attribute {required!r}"
                 )
 
-    def __init__(self, working_dir):
+    def __init__(self, working_dir, mmap_mode=None):
         """Parameters
         ----------
         working_dir : str or Path
             Directory where data files are read from and written to.  Created if
             it does not exist.
+        mmap_mode : None or str
+            If given (e.g. ``"r"``), ``.npy`` files are opened as memory-maps in
+            that mode instead of being read fully into RAM.  Passed straight to
+            ``np.load``; ``None`` (the default) preserves the original
+            load-into-memory behaviour.  Only affects ``.npy`` files.
         """
         self.working_dir = Path(working_dir)
         self.working_dir.mkdir(parents=True, exist_ok=True)
+        self.mmap_mode = mmap_mode
         self.files = self._build_files()
 
     def _build_files(self):
@@ -145,9 +151,12 @@ class DataHandles:
 
     # -- (de)serialisation --------------------------------------------------
 
-    @staticmethod
-    def _load(file):
+    def _load(self, file):
         """Load the object at *file*, or ``None`` if it does not exist.
+
+        When ``self.mmap_mode`` is set and *file* is a ``.npy``, the array is
+        opened as a memory-map (via ``np.load(..., mmap_mode=...)``) rather than
+        read fully into RAM; all other files use their registered handler.
 
         A load failure (corrupt file, unpickling error, device mismatch, ...)
         is reported and treated as ``None`` rather than raising.
@@ -159,6 +168,8 @@ class DataHandles:
         except KeyError:
             raise TypeError(f"No handler for extension {file.suffix!r}") from None
         try:
+            if file.suffix == ".npy" and self.mmap_mode is not None:
+                return np.load(file, mmap_mode=self.mmap_mode)
             return loader(file)
         except Exception as exc:
             print(f"Could not load {file} ({type(exc).__name__}: {exc}); using None")

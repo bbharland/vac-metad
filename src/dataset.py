@@ -46,15 +46,28 @@ class TimeLaggedDataset(torch.utils.data.Dataset):
         self.y = y
 
     def astype(self, dtype):
+        """Return a copy cast to *dtype*.
+
+        Reads ``x``/``y`` fully into RAM, so calling this on a memmap-backed
+        dataset defeats the memory-mapping.  With data already stored as
+        float32 on disk this is normally unnecessary.
+        """
         return TimeLaggedDataset(self.x.astype(dtype), self.y.astype(dtype))
 
     def __getitem__(self, item):
-        return self.x[item], self.y[item]
+        # .copy() returns writeable arrays.  Rows of a memmap-backed x/y are
+        # read-only views, which makes torch.from_numpy (called by the default
+        # collate) warn about non-writable tensors; copying the single row here
+        # avoids that and is cheap for in-RAM arrays too.
+        return self.x[item].copy(), self.y[item].copy()
 
     def __len__(self):
         return len(self.x)
 
     def __add__(self, other):
+        # np.vstack materializes both operands fully in RAM; to combine many
+        # per-step runs without that peak, concatenate on disk with
+        # gather_feature_data instead.
         x = np.vstack((self.x, other.x))
         y = np.vstack((self.y, other.y))
         return TimeLaggedDataset(x, y)
@@ -112,7 +125,11 @@ class WeightedTimeLaggedDataset(torch.utils.data.Dataset):
                                          self.yweights.astype(dtype))
 
     def __getitem__(self, item):
-        return self.x[item], self.xweights[item], self.y[item], self.yweights[item]
+        # Copy the (2-D) feature rows so memmap-backed data is writeable; the
+        # weights come back as scalar value-copies from integer indexing and
+        # need no copy.  See TimeLaggedDataset.__getitem__.
+        return (self.x[item].copy(), self.xweights[item],
+                self.y[item].copy(), self.yweights[item])
 
     def __len__(self):
         return len(self.x)

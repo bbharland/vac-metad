@@ -105,13 +105,13 @@ class WeightedTimeLaggedDataset(torch.utils.data.Dataset):
         xweights, yweights : arrays with shape (num_frames - lagframes,)
         """
         assert x.shape == y.shape, (
-            f'Shape mistmatch: {x.shape} != {x.shape}'
+            f'Shape mistmatch: {x.shape} != {y.shape}'
         )
         assert len(xweights) == len(x), (
             f'Size mismatch: {len(xweights)} != {len(x)}'
         )
-        assert len(yweights) == len(x), (
-            f'Size mismatch: {len(yweights)} != {len(x)}'
+        assert len(yweights) == len(y), (
+            f'Size mismatch: {len(yweights)} != {len(y)}'
         )
         self.x = x
         self.xweights = xweights

@@ -81,6 +81,76 @@ def simulation_data_test(working_dir, sd, labels):
     return sd2
 
 
+def gather_feature_data(p, num_steps, labels=("dihedrals", "features")):
+    """Concatenate per-step ``.npy`` arrays into memmapped files in the base dir.
+
+    Replaces the ``list.append`` + :func:`numpy.vstack` idiom, which holds every
+    step in RAM and then briefly doubles that at the vstack call.  Instead, for
+    each label the per-step ``step_i/<label>.npy`` arrays are streamed row-block
+    by row-block into a single pre-sized ``<label>.npy`` in the base directory,
+    so peak memory stays at roughly one step's worth regardless of *num_steps*.
+
+    Two passes are made per label: the first reads only the ``.npy`` headers (via
+    ``mmap_mode="r"``) to size the output, the second fills it.  Steps are opened
+    one at a time so the file-descriptor count stays flat even for many steps.
+    Ragged per-step row counts are supported; the row order matches
+    ``vstack`` over ``step_0 .. step_{num_steps-1}`` so that a given row of
+    ``dihedrals`` still lines up with the same row of ``features``.
+
+    Parameters
+    ----------
+    p : SimulationParameters or Path or str
+        Passed to :func:`simulation_data` to locate the base directory.
+    num_steps : int
+        Number of ``step_i`` subdirectories to concatenate (``i`` in
+        ``0 .. num_steps - 1``).
+    labels : sequence of str
+        Which ``.npy`` data labels to concatenate.
+
+    Returns
+    -------
+    SimulationData
+        Handle to the base directory, with caches for *labels* dropped so the
+        next access reads the freshly written files.
+    """
+    base = simulation_data(p)
+
+    for label in labels:
+        # -- pass 1: size the output from per-step headers only --------------
+        total_rows, ncols, dtype = 0, None, None
+        for i in range(num_steps):
+            a = getattr(simulation_data(p, subdir=i, mmap_mode="r"), label)
+            if a is None:
+                raise FileNotFoundError(f"{label!r} missing in step_{i}")
+            if ncols is None:
+                ncols, dtype = a.shape[1], a.dtype
+            elif a.shape[1] != ncols or a.dtype != dtype:
+                raise ValueError(
+                    f"step_{i} {label!r} has ({a.shape[1]}, {a.dtype}), "
+                    f"expected ({ncols}, {dtype})"
+                )
+            total_rows += a.shape[0]
+            del a  # release the memmap before opening the next step
+
+        # -- pass 2: stream each step into the pre-sized output memmap --------
+        out = np.lib.format.open_memmap(
+            base.files[label], mode="w+", dtype=dtype, shape=(total_rows, ncols)
+        )
+        row = 0
+        for i in range(num_steps):
+            a = getattr(simulation_data(p, subdir=i, mmap_mode="r"), label)
+            n = a.shape[0]
+            out[row:row + n] = a  # copies one step's rows into the output
+            row += n
+            del a
+        out.flush()
+        del out
+
+        base.reload(label)  # drop any stale cache for the rewritten file
+
+    return base
+
+
 class SimulationData(DataHandles):
     """Handles for one simulation's extracted, learned, and projected data.
 

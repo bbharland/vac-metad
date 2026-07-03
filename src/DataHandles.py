@@ -11,8 +11,8 @@ from .dataclass import DataClass
 #     saver(file, obj) -> None
 
 
-def _load_npy(file):
-    return np.load(file)
+def _load_npy(file, mmap_mode=None):
+    return np.load(file, mmap_mode=mmap_mode)
 
 
 def _save_npy(file, obj):
@@ -154,9 +154,9 @@ class DataHandles:
     def _load(self, file):
         """Load the object at *file*, or ``None`` if it does not exist.
 
-        When ``self.mmap_mode`` is set and *file* is a ``.npy``, the array is
-        opened as a memory-map (via ``np.load(..., mmap_mode=...)``) rather than
-        read fully into RAM; all other files use their registered handler.
+        When ``self.mmap_mode`` is set it is forwarded to the ``.npy`` loader so
+        arrays are opened as memory-maps rather than read fully into RAM; other
+        handlers do not take the argument and are called plainly.
 
         A load failure (corrupt file, unpickling error, device mismatch, ...)
         is reported and treated as ``None`` rather than raising.
@@ -168,9 +168,8 @@ class DataHandles:
         except KeyError:
             raise TypeError(f"No handler for extension {file.suffix!r}") from None
         try:
-            if file.suffix == ".npy" and self.mmap_mode is not None:
-                return np.load(file, mmap_mode=self.mmap_mode)
-            return loader(file)
+            kwargs = {"mmap_mode": self.mmap_mode} if file.suffix == ".npy" else {}
+            return loader(file, **kwargs)
         except Exception as exc:
             print(f"Could not load {file} ({type(exc).__name__}: {exc}); using None")
             return None

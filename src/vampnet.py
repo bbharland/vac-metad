@@ -369,10 +369,17 @@ class SRV:
         self.transform_matrix = transform_matrix.cpu().numpy().astype(np.float64)
 
     # -- public ------------------------------------------------------------ #
-    def fit(self, dataset, epsilon: float = EPSILON):
-        assert isinstance(dataset, TimeLaggedDataset), f"ERROR with {type(dataset) = }"
-        x = self._transform_features(dataset.x)
-        y = self._transform_features(dataset.y)
+    def fit(self, dataset, epsilon=EPSILON):
+        assert isinstance(dataset, TimeLaggedDataset), f'ERROR with {type(dataset) = }'
+        if isinstance(dataset, TrajectoryDataset):
+            # x and y are offset views of one trajectory: transform it once,
+            # then slice.  Exact because the eval-mode net is row-wise.
+            z = self._transform_features(dataset.trajectory)
+            lag = dataset.lagframes
+            x, y = z[:-lag], z[lag:]
+        else:
+            x = self._transform_features(dataset.x)
+            y = self._transform_features(dataset.y)
         mean, c0, c1 = cov_matrices(x, y)
         self._solve(mean, c0, c1, epsilon=epsilon)
         return self

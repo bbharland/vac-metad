@@ -301,15 +301,13 @@ class WeightedVAMPNet(VAMPNet):
 class SRV:
     """Wrap a trained VAMPNet and solve the final eigenvalue problem.
 
-    The feature network is held in eval mode with autograd disabled.  The final
-    whitening + eigendecomposition is done in ``float64`` (torch) for accuracy;
-    the resulting ``mean`` / ``transform_matrix`` / ``eigvals`` are stored as
-    float64 NumPy arrays.
+    The feature network is held in eval mode with autograd disabled.  The final whitening + eigendecomposition is done in ``float64`` (torch) for accuracy; the resulting ``mean`` / ``transform_matrix`` / ``eigvals`` are stored as float64 NumPy arrays.
 
     Eigenfunctions:
         SRV.__call__(features) -> ndarray (n_samples, num_eigvecs)
         srv_net()              -> torch module mapping features -> CVs (CPU)
     """
+
     def __init__(self, net, lagtime):
         """Parameters
         ----------
@@ -333,23 +331,36 @@ class SRV:
         return -self.lagtime / np.log(self.eigvals)
 
     # -- internals --------------------------------------------------------- #
-    def _transform_features(self, features) -> torch.Tensor:
+    def _transform_features(self, features, batch_size=100_000):
         """Run features through the float32 network, return a float64 CPU tensor.
 
-        The network runs on ``self.device``; the result is promoted to float64
-        on the CPU for the covariance/eigendecomposition stage.
-        """
-        with torch.no_grad():
-            z = self.net(to_torch(features, device=self.device))
-        return z.double().cpu()
+        Features are transformed one batch of rows at a time, so a memmap-backed (or otherwise large) input is never moved to the device in full: each batch is copied to ``self.device``, passed through the network, and collected back on the CPU as float64.  The concatenated output is ``(n_samples, num_eigvecs)`` -- small even for a large input -- so only the input side needs streaming.
 
-    def _solve(self, mean: torch.Tensor, c0: torch.Tensor, c1: torch.Tensor,
-               epsilon: float = EPSILON):
+        The result is identical to a single whole-array call: the network is in eval mode (``BatchNorm1d`` uses its stored running statistics; every other layer is pointwise), so processing rows in batches changes no row's output.
+        """
+        chunks = []
+        with torch.no_grad():
+            for start in range(0, len(features), batch_size):
+                # .copy() materializes a writeable batch from the (read-only) memmap
+                # slice, avoiding torch's non-writable-tensor warning -- see the
+                # matching note in dataset.py.  Only one batch (~18 MB) at a time.
+                batch = features[start : start + batch_size].copy()
+                z = self.net(to_torch(batch, device=self.device))
+                chunks.append(z.double().cpu())
+        return torch.cat(chunks, dim=0)
+
+    def _solve(
+        self,
+        mean: torch.Tensor,
+        c0: torch.Tensor,
+        c1: torch.Tensor,
+        epsilon: float = EPSILON,
+    ):
         """Whitening + symmetric eigenproblem (float64, torch). Stores results."""
         inv_sqrt_c0 = sym_inverse(c0, epsilon=epsilon, return_sqrt=True)
-        koopman = inv_sqrt_c0 @ c1 @ inv_sqrt_c0          # symmetric by construction
-        eigvals, eigvecs = torch.linalg.eigh(koopman)     # ascending
-        eigvals = torch.flip(eigvals, dims=(0,))          # -> descending
+        koopman = inv_sqrt_c0 @ c1 @ inv_sqrt_c0  # symmetric by construction
+        eigvals, eigvecs = torch.linalg.eigh(koopman)  # ascending
+        eigvals = torch.flip(eigvals, dims=(0,))  # -> descending
         eigvecs = torch.flip(eigvecs, dims=(1,))
         transform_matrix = inv_sqrt_c0 @ eigvecs
 
@@ -359,9 +370,7 @@ class SRV:
 
     # -- public ------------------------------------------------------------ #
     def fit(self, dataset, epsilon: float = EPSILON):
-        assert isinstance(dataset, TimeLaggedDataset), (
-            f'ERROR with {type(dataset) = }'
-        )
+        assert isinstance(dataset, TimeLaggedDataset), f"ERROR with {type(dataset) = }"
         x = self._transform_features(dataset.x)
         y = self._transform_features(dataset.y)
         mean, c0, c1 = cov_matrices(x, y)
@@ -382,12 +391,12 @@ class SRV:
         eig_layer.weight = nn.Parameter(W.t())
         eig_layer.bias = nn.Parameter(b)
 
-        feature_net = copy.deepcopy(self.net)   # isolate from self.net
+        feature_net = copy.deepcopy(self.net)  # isolate from self.net
         net = nn.Sequential(*feature_net, eig_layer)
         for p in net.parameters():
             p.requires_grad = False
-        net.eval()                              # use BatchNorm running stats
-        return net.to(device=torch.device('cpu')).float()
+        net.eval()  # use BatchNorm running stats
+        return net.to(device=torch.device("cpu")).float()
 
     def __call__(self, features):
         z = self._transform_features(features).numpy()

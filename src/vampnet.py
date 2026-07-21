@@ -370,13 +370,12 @@ class SRV:
 
     # -- public ------------------------------------------------------------ #
     def fit(self, dataset, epsilon=EPSILON):
-        assert isinstance(dataset, TimeLaggedDataset), f'ERROR with {type(dataset) = }'
+        assert isinstance(dataset, TimeLaggedDataset), f'ERROR: {type(dataset) = }'
         if isinstance(dataset, TrajectoryDataset):
             # x and y are offset views of one trajectory: transform it once,
             # then slice.  Exact because the eval-mode net is row-wise.
             z = self._transform_features(dataset.trajectory)
-            lag = dataset.lagframes
-            x, y = z[:-lag], z[lag:]
+            x, y = z[:-dataset.lagframes], z[dataset.lagframes:]
         else:
             x = self._transform_features(dataset.x)
             y = self._transform_features(dataset.y)

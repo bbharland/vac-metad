@@ -1,6 +1,6 @@
 import numpy as np
 
-from .calcs import (
+from .math import (
     eig_sorted,
     timescale_from_eigval
 )
@@ -10,161 +10,17 @@ state_names = {1: r'$C_5$', 2: r'$C_7^{eq}$', 3: r'$\alpha_P$',
                4: r'$\alpha_R$', 5: r'$C_7^{ax}$', 6: r'$\alpha_L$'}
 
 
-# REVIEW: The hardcoded bounds below are the single most fragile thing in the
-# module (docstring already warns they're valid for one eigenvalue solution
-# only). Consider lifting them into a module-level data structure keyed by
-# state, e.g.
-#   STATE_CORES = {1: [(0, -0.26, -0.13), (1, 0.2, 0.78), (3, 1.0, 2.47)], ...}
-# and evaluating with a generic `all(lo < psi[i] < hi for i, lo, hi in ...)`.
-# That turns six near-identical numeric branches into one loop + one table you
-# can regenerate when the eigenvectors change, and makes the provenance of the
-# numbers explicit. Left as-is here since it changes the public behaviour path;
-# flagging for discussion.
-def core_state_psi(psi):
-    """Identify state corresponding to psi(x).
-
-    NB: The numbers are valid only for one particular solution to the eigenvalue problem!  In this case, it came from solving the unbiased 350 ns simulation.
-
-    Parameters:
-    ----------
-    psi : array with shape (num_eigvals,)
-        Value of the eigenfunctions for a structure, psi(x)
-
-    Return
-    ------
-    state : int
-        0   : Structure is not in a state core
-        1-6 : Structure is in corresponding state core
-    """
-    state = 0 # not in a state core
-
-    s1234 = -0.26 < psi[0] < -0.13
-    s56 = 5 < psi[0] < 5.42
-
-    if s1234:
-        s12 = 0.2 < psi[1] < 0.78
-        s34 = -1.57 < psi[1] < -1
-
-        if s12:
-            if 1 < psi[3] < 2.47:
-                state = 1
-            elif -2.008 < psi[3] < -0.7:
-                state = 2
-        elif s34:  # REVIEW: was `if s34`; s12/s34 are mutually exclusive by
-                   # construction, so `elif` documents that and skips a check.
-            if -5.6 < psi[4] < -1:
-                state = 3
-            elif 0.8 < psi[4] < 2.31:
-                state = 4
-    elif s56:
-        if 17 < psi[2] < 20:
-            state = 5
-        elif -1.8 < psi[2] < -0.7:
-            state = 6
-    return state
-
-
-def core_state_psi_withnans(psi):
-    # REVIEW: Note the *non*-nan path (`core_state_psi`) silently maps a NaN
-    # psi[0] to state 0 (all `lo < nan < hi` comparisons are False), i.e. NaN
-    # frames are treated as "outside a core" rather than propagated. That's
-    # probably fine given how the trajectory fills 0s, but it means the two
-    # entry points disagree on NaN handling. Worth confirming that's intended.
-    if np.isnan(psi[0]):
-        return np.nan
-
-    state = core_state_psi(psi)
-    if state == 0:
-        return np.nan
-    else:
-        return state
-
-
-def state_psi(psi):
-    # REVIEW: The original had no return for the boundary cases psi[0] == 2 and
-    # psi[1] == 0, so it fell through to an implicit `return None`. That None
-    # then flows into `states_from_psi` (silently making an object-dtype array)
-    # and into `states[0] = state_psi(...)` (which raises when assigned into an
-    # int array). Restructured so every input returns an int. This *does* pin
-    # down the previously-undefined boundaries: psi[0] == 2 now goes to the
-    # 5/6 branch, psi[1] == 0 to the 3/4 branch. Measure-zero for real float
-    # data, but it's a deliberate semantic choice -- reject this hunk if you'd
-    # rather keep the boundaries undefined.
-    if psi[0] < 2:                         # states 1-4
-        if psi[1] > 0:                     # states 1-2
-            return 1 if psi[3] > 0 else 2
-        else:                              # states 3-4
-            return 3 if psi[4] < 0 else 4
-    else:                                  # states 5-6 (psi[0] >= 2)
-        return 5 if psi[2] > 5 else 6
-
-
-def state_psi_withnans(psi):
-    if np.isnan(psi[0]):
-        return np.nan
-    else:
-        return state_psi(psi)
-
-
-# REVIEW: `replace_zero_states` and `deal_with_state_core_zeros` (further down)
-# do the same job with slightly different edge behaviour: this one tolerates a
-# leading 0 (leaves leading 0s as 0), the other asserts states[0] != 0. Pick
-# one and delete the other to avoid them drifting apart. I've left both so the
-# public names your other modules import don't disappear mid-review.
-def replace_zero_states(states):
-    """Return new sequence of states with 0s replaced by last state core visited.
-    """
-    new_states = states.copy()
-    state = new_states[0]
-    for i, s in enumerate(states):
-        if s == 0:
-            new_states[i] = state
-        else:
-            state = new_states[i]
-    return new_states
-
-
-def coarse_grain_states(states, merge_states):
-    """Return new coarse-grained sequence of states.
-
-    If states contain 0s, these get mapped to 0.  Other states are mapped according to 'merge_states':
-    E.g. ((1, 2, 3), (4, 5)) results in a two state model with s=1 corresponding to input states (1, 2, 3)
-    """
-    new_states_dict = {0: 0}
-    for n, state_set in enumerate(merge_states):
-        new_states_dict.update({i: n + 1 for i in state_set})
-    return np.array([new_states_dict[s] for s in states])
-
-
-def states_from_psi(psi, use_state_cores=True, merge_states=None):
-    """From psi array:
-        1. Determine which state index each psi[i] corresponds to (using defined state cores or not)
-        2. Do coarse graining of states according to 'merge_states'
-
-    Parameters
-    ----------
-    psi : array with shape (num_frames, num_eigfuncs)
-    use_state_cores : Bool
-        Decide whether to use 'state_psi' or 'core_state_psi'
-    merge_states : list(list(int))
-        If you want to lump states together, provide a list of list of state numbers to merge
-
-    Return
-    ------
-    states : array(int) with shape (num_frames,)
-        use_state_cores=False : States are labelled 1-6.
-        use_state_cores=True : States are labelled 0-6 (0 = outside state core)
-    """
-    if use_state_cores:
-        states = np.array([core_state_psi(x) for x in psi])
-        states[0] = state_psi(psi[0]) # use non-core states for initial state
-    else:
-        states = np.array([state_psi(x) for x in psi])
-
-    if merge_states is not None:
-        return coarse_grain_states(states, merge_states)
-    else:
-        return states
+# def replace_zero_states(states):
+#     """Return new sequence of states with 0s replaced by last state core visited.
+#     """
+#     new_states = states.copy()
+#     state = new_states[0]
+#     for i, s in enumerate(states):
+#         if s == 0:
+#             new_states[i] = state
+#         else:
+#             state = new_states[i]
+#     return new_states
 
 
 def trajectory_from_psi(psi, use_state_cores=True, merge_states=None):
@@ -195,20 +51,6 @@ def trajectory_from_psi(psi, use_state_cores=True, merge_states=None):
     else:
         return states
 
-
-
-def deal_with_state_core_zeros(states):
-    """Take a sequence of states where 0 indicates that the system is not in a state core and replace it with the last state core the system visited.
-    """
-    assert states[0] != 0, (
-        "Trajectory cannot start with a zero state!"
-    )
-    trajectory = [states[0]]
-    for state in states[1:]:
-        si = trajectory[-1]
-        sj = state if state != 0 else si
-        trajectory.append(sj)
-    return np.array(trajectory)
 
 
 def transition_counts_matrix(states, lagframes=1):
@@ -341,31 +183,6 @@ def mfpt_matrix(T, pi, lagtime):
     Z = np.linalg.inv(eye - T + W)
     Z_w = zero + np.diag(Z)
     return lagtime * (Z_w - Z) / W
-
-
-# REVIEW: This is a spelling-fixed duplicate of `coarse_grain_states` above
-# (that one seeds the map with {0: 0}, this one doesn't). Suggest deleting this
-# and calling `coarse_grain_states` -- the {0: 0} seed is harmless here because
-# the trajectory has no 0s by the time it's called. Kept for now to avoid
-# breaking imports; renaming/removing is a follow-up once callers are checked.
-def course_grain_state_trajectory(trajectory, lumped_states):
-    """Parameters
-    ----------
-    trajectory : array(int) with shape (num_frames,)
-        Sequence of states, each state in [1, num_states]
-    lumped_states : list(list(int))
-        A tuple of tuples indicating states to be lumped together
-        E.g. ((1, 2, 3), (4, 5)) results in a two state model with s=1 corresponding to input states (1, 2, 3)
-
-    Return
-    ------
-    new_trajectory : array(int) with shape (num_frames,)
-        Coarse grained sequence of states, each state in [1, new_num_states]
-    """
-    new_states_dict = {}
-    for n, state_set in enumerate(lumped_states):
-        new_states_dict.update({i: n + 1 for i in state_set})
-    return np.array([new_states_dict[s] for s in trajectory])
 
 
 def trajectory_with_state_cores(psi, merge_states=None):

@@ -373,3 +373,24 @@ def compute_acf_dataclass(*args, **kwargs):
         tau_int_frames=info["tau_int_frames"],
         imag=info["imag"],
     )
+
+
+# def compute_acfs(wd, signals, lagtime, num_frames_acf, calculate=True):
+#     file = wd / "acfs.pickle"
+#     if calculate:
+#         acfs = {
+#             label: compute_acf_dataclass(u, lagtime, num_frames_acf)
+#             for label, u in signals.items()
+#         }
+#         save_pickle(file, acfs)
+#     else:
+#         acfs = load_pickle(file)
+#     return acfs
+
+# signals = {
+#     r"$\psi_1(x)$": sd.cvs[:, 0],
+#     r"$\psi_2(x)$": sd.cvs[:, 1],
+#     r"$\phi$": sd.dihedrals[:, 0],
+#     r"$\psi$": sd.dihedrals[:, 1],
+# }
+# acfs = compute_acfs(sd.working_dir, signals, lagtime, num_frames_acf, calculate=False)

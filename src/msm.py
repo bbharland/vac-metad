@@ -10,6 +10,16 @@ state_names = {1: r'$C_5$', 2: r'$C_7^{eq}$', 3: r'$\alpha_P$',
                4: r'$\alpha_R$', 5: r'$C_7^{ax}$', 6: r'$\alpha_L$'}
 
 
+# REVIEW: The hardcoded bounds below are the single most fragile thing in the
+# module (docstring already warns they're valid for one eigenvalue solution
+# only). Consider lifting them into a module-level data structure keyed by
+# state, e.g.
+#   STATE_CORES = {1: [(0, -0.26, -0.13), (1, 0.2, 0.78), (3, 1.0, 2.47)], ...}
+# and evaluating with a generic `all(lo < psi[i] < hi for i, lo, hi in ...)`.
+# That turns six near-identical numeric branches into one loop + one table you
+# can regenerate when the eigenvectors change, and makes the provenance of the
+# numbers explicit. Left as-is here since it changes the public behaviour path;
+# flagging for discussion.
 def core_state_psi(psi):
     """Identify state corresponding to psi(x).
 
@@ -40,7 +50,8 @@ def core_state_psi(psi):
                 state = 1
             elif -2.008 < psi[3] < -0.7:
                 state = 2
-        if s34:
+        elif s34:  # REVIEW: was `if s34`; s12/s34 are mutually exclusive by
+                   # construction, so `elif` documents that and skips a check.
             if -5.6 < psi[4] < -1:
                 state = 3
             elif 0.8 < psi[4] < 2.31:
@@ -54,6 +65,11 @@ def core_state_psi(psi):
 
 
 def core_state_psi_withnans(psi):
+    # REVIEW: Note the *non*-nan path (`core_state_psi`) silently maps a NaN
+    # psi[0] to state 0 (all `lo < nan < hi` comparisons are False), i.e. NaN
+    # frames are treated as "outside a core" rather than propagated. That's
+    # probably fine given how the trajectory fills 0s, but it means the two
+    # entry points disagree on NaN handling. Worth confirming that's intended.
     if np.isnan(psi[0]):
         return np.nan
 
@@ -65,28 +81,22 @@ def core_state_psi_withnans(psi):
 
 
 def state_psi(psi):
-    s1234 = psi[0] < 2
-    s56 = psi[0] > 2
-
-    if s1234:
-        s12 = psi[1] > 0
-        s34 = psi[1] < 0
-
-        if s12:
-            if psi[3] > 0:
-                return 1
-            else:
-                return 2
-        elif s34:
-            if psi[4] < 0:
-                return 3
-            else:
-                return 4
-    elif s56:
-        if psi[2] > 5:
-            return 5
-        else:
-            return 6
+    # REVIEW: The original had no return for the boundary cases psi[0] == 2 and
+    # psi[1] == 0, so it fell through to an implicit `return None`. That None
+    # then flows into `states_from_psi` (silently making an object-dtype array)
+    # and into `states[0] = state_psi(...)` (which raises when assigned into an
+    # int array). Restructured so every input returns an int. This *does* pin
+    # down the previously-undefined boundaries: psi[0] == 2 now goes to the
+    # 5/6 branch, psi[1] == 0 to the 3/4 branch. Measure-zero for real float
+    # data, but it's a deliberate semantic choice -- reject this hunk if you'd
+    # rather keep the boundaries undefined.
+    if psi[0] < 2:                         # states 1-4
+        if psi[1] > 0:                     # states 1-2
+            return 1 if psi[3] > 0 else 2
+        else:                              # states 3-4
+            return 3 if psi[4] < 0 else 4
+    else:                                  # states 5-6 (psi[0] >= 2)
+        return 5 if psi[2] > 5 else 6
 
 
 def state_psi_withnans(psi):
@@ -96,6 +106,11 @@ def state_psi_withnans(psi):
         return state_psi(psi)
 
 
+# REVIEW: `replace_zero_states` and `deal_with_state_core_zeros` (further down)
+# do the same job with slightly different edge behaviour: this one tolerates a
+# leading 0 (leaves leading 0s as 0), the other asserts states[0] != 0. Pick
+# one and delete the other to avoid them drifting apart. I've left both so the
+# public names your other modules import don't disappear mid-review.
 def replace_zero_states(states):
     """Return new sequence of states with 0s replaced by last state core visited.
     """
@@ -166,6 +181,12 @@ def trajectory_from_psi(psi, use_state_cores=True, merge_states=None):
     trajectory : array with shape (num_frames,)
         The sequence of states used for analysis (0's are replaced with last state core visited.)
     """
+    # REVIEW: This path coarse-grains *then* fills zeros, whereas
+    # `trajectory_with_state_cores` fills zeros *then* coarse-grains. The two
+    # orders happen to agree (the "last core visited" is the same state either
+    # way, so its coarse label is the same), but that equivalence is non-obvious
+    # and easy to break. Consolidating the two trajectory builders onto one
+    # ordering would remove the need to reason about it.
     states = states_from_psi(
         psi, use_state_cores=use_state_cores, merge_states=merge_states
     )
@@ -204,28 +225,49 @@ def transition_counts_matrix(states, lagframes=1):
     counts : array(int) with shape (num_states, num_states)
         Counts of transitions found in 'states'
     """
+    # REVIEW: `lagframes=0` silently returns an all-zero matrix, because
+    # states[:-0] == states[:0] == empty. Guard it.
+    assert lagframes >= 1, f'lagframes must be >= 1, got {lagframes}'
+
     unique = np.unique(states)
     num_states = len(unique)
     assert np.all(unique == np.arange(1, num_states + 1)), (
         f'states must be in range [1, num_states] & all states must be present'
     )
-    counts = np.zeros((num_states, num_states), dtype=int)
-    for si, sj in zip(states[:-lagframes], states[lagframes:]):
-        counts[si - 1, sj - 1] += 1
-    return counts
+
+    # REVIEW: vectorised the count loop. For MD trajectories with millions of
+    # frames the pure-Python loop dominates. This flattens each (from, to) pair
+    # to a single index and bincounts it -- identical result, orders of
+    # magnitude faster. Revert to the loop if you value the explicitness more.
+    src = states[:-lagframes] - 1
+    dst = states[lagframes:] - 1
+    flat = src * num_states + dst
+    counts = np.bincount(flat, minlength=num_states ** 2)
+    return counts.reshape(num_states, num_states).astype(int)
 
 
 def equilibrium_distribution_mle(counts):
-    """MLE estimate for the equilibrium distribution from transition counts.
-            pi_i ~ sum_j C_ij / sum_ij C_ij
+    """Reversible estimate of the equilibrium distribution from transition counts.
+            pi_i ~ sum_j C_sym_ij / sum_ij C_sym_ij,   C_sym = (C + C.T) / 2
+
+    NB: This is the symmetrised-counts reversible estimator, not the maximum
+    likelihood reversible estimator.  The true reversible MLE requires an
+    iterative fixed-point solve under detailed balance (cf. Prinz et al. 2011,
+    as implemented in deeptime/pyEMMA).  The symmetrised estimator is a
+    consistent, internally-consistent reversible estimator (pi below is exactly
+    stationary for the T returned by `transition_matrix_mle`), but the "mle" in
+    the name is a misnomer.
     """
     counts_sym = 0.5 * (counts + counts.T)
     return counts_sym.sum(axis=1) / counts_sym.sum()
 
 
 def transition_matrix_mle(counts):
-    """MLE estimate for the transition matrix from transition counts.
-            T_ij ~ C_ij / sum_j C_ij
+    """Reversible estimate of the transition matrix from transition counts.
+            T_ij ~ C_sym_ij / sum_j C_sym_ij,   C_sym = (C + C.T) / 2
+
+    See the note in `equilibrium_distribution_mle`: this is the symmetrised
+    reversible estimator, not the reversible MLE.
     """
     counts_sym = 0.5 * (counts + counts.T)
     return counts_sym / counts_sym.sum(axis=1).reshape(-1, 1)
@@ -251,7 +293,13 @@ def eig_transition_matrix(T):
     """
     w, vl = eig_sorted(T.T)
     vl = vl.T
-    vr = np.zeros(vl.shape)
+    # REVIEW: was `np.zeros(vl.shape)`, which is float64. If eig_sorted returns
+    # a complex dtype (np.linalg.eig does, even for a reversible T with real
+    # spectrum), assigning complex slices into a float array drops the
+    # imaginary part with a ComplexWarning. `zeros_like` keeps vr's dtype in
+    # step with vl so real-but-complex-typed vectors survive intact. If
+    # eig_sorted already casts to real, this is a no-op.
+    vr = np.zeros_like(vl)
     pi = vl[0, :] / vl[0, :].sum()
 
     for i, phi in enumerate(vl):
@@ -266,7 +314,7 @@ def eig_transition_matrix(T):
 def mfpt_matrix(T, pi, lagtime):
     """
     Return matrix of mean first passage times, M, where:
-        M_ij = MFPT(i->j) (shares units with lagtime)
+        M_ij = MFPT(i->j) (shares units with lagtime), and M_ii = 0
 
     Snell's formula
         M_ij = (Z_jj - Z_ij) / pi_j
@@ -295,6 +343,11 @@ def mfpt_matrix(T, pi, lagtime):
     return lagtime * (Z_w - Z) / W
 
 
+# REVIEW: This is a spelling-fixed duplicate of `coarse_grain_states` above
+# (that one seeds the map with {0: 0}, this one doesn't). Suggest deleting this
+# and calling `coarse_grain_states` -- the {0: 0} seed is harmless here because
+# the trajectory has no 0s by the time it's called. Kept for now to avoid
+# breaking imports; renaming/removing is a follow-up once callers are checked.
 def course_grain_state_trajectory(trajectory, lumped_states):
     """Parameters
     ----------
@@ -338,6 +391,12 @@ def trajectory_with_state_cores(psi, merge_states=None):
 
 
 def msm_analysis_mfpt(trajectory, lagtime):
+    # REVIEW: counts are always taken at lagframes=1 (adjacent frames) while
+    # `lagtime` is threaded straight into the MFPT/timescale units. That's
+    # self-consistent only if `lagtime` is the physical time between adjacent
+    # frames of `trajectory`. Fine as a convention, but nothing enforces it --
+    # a docstring line stating "lagtime == time per frame of trajectory" would
+    # save a future footgun if anyone ever passes a strided trajectory.
     counts = transition_counts_matrix(trajectory)
     num_states = len(counts)
     pi = equilibrium_distribution_mle(counts)
@@ -390,6 +449,10 @@ def first_passage_times_twostate(trajectory, lagtime):
     first_passage_times : list(list(float))
         first_passage_times[0] = list of FPTs 1 => 2
         first_passage_times[1] = list of FPTs 2 => 1
+
+    NB: The final (trailing) dwell is intentionally not recorded -- there is no
+    transition out of it, so its passage time is right-censored and dropping it
+    is correct.
     """
     first_passage_times = [[], []]
     present_state = trajectory[0]

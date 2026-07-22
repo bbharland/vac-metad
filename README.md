@@ -29,6 +29,8 @@ git difftool fcf30a9 -- src/kernel.py
 # against HEAD or some other commit
 git difftool fcf30a9 HEAD -- src/kernel.py
 git difftool fcf30a96 a1b2c3d4 -- src/kernel.py
+# for notebooks
+nbdiff-web file.ipynb
 ```
 ## Reloading modules
 ```python

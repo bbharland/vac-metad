@@ -120,7 +120,7 @@ class SimulationParametersMetaD(SimulationParameters):
 
     def __init__(self, **kwargs):
         # MetaD-specific overrides, extracted before replace_defaults runs
-        self.bias_factor = kwargs.pop("tau_G", 5.0)
+        self.bias_factor = kwargs.pop("bias_factor", 5.0)
         self.tau_G = kwargs.pop("tau_G", 120 * unit.femtoseconds)
         self.height = kwargs.pop("height", 1.20 * unit.kilojoule_per_mole)
         self.width = kwargs.pop("width", np.array([0.1, 0.1]))

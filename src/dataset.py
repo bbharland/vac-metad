@@ -106,7 +106,7 @@ class TimeLaggedDataset(torch.utils.data.Dataset):
 class TrajectoryDataset(TimeLaggedDataset):
     """Data defined as a ordered sequence of states {x_t}.  The lag time is defined elsewhere.
     """
-    def __init__(self, trajectory, lagframes=1):
+    def __init__(self, trajectory, lagframes):
         """Parameters
         ---------
         trajectory : ndarray with shape (num_frames, num_features)
@@ -183,7 +183,7 @@ class WeightedTimeLaggedDataset(torch.utils.data.Dataset):
 class WeightedTrajectoryDataset(WeightedTimeLaggedDataset):
     """As TrajectoryDataset, but with weights.  Implementing __add__ is a bad idea.  Use TimeLaggedDataset for this.
     """
-    def __init__(self, trajectory, weights, lagframes=1):
+    def __init__(self, trajectory, weights, lagframes):
         """Parameters
         ---------
         trajectory : ndarray with shape (num_frames, num_features)

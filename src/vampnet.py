@@ -314,7 +314,17 @@ class SRV:
         net : torch.nn.Sequential
             The trained ``VAMPNet.net``.
         lagtime : float
-            Lag time (tau), e.g. in ps.
+            The lag time tau (e.g. in ps) -- the familiar MSM/VAC object, NOT
+            the frame spacing.  It is ``frametime * lagframes``; see
+            :class:`SimulationData.__init__` for the complete definition.
+
+            Consistency requirement: the eigenvalues solved for in :meth:`fit`
+            are estimated at a lag of ``dataset.lagframes`` frames (the ``x``/
+            ``y`` offset), so for :meth:`timescales` to be correct this
+            ``lagtime`` MUST equal ``dataset.lagframes * frametime``.  Passing a
+            SimulationData's ``.lagtime`` built from the same ``lagframes``
+            satisfies this automatically; supplying the frame spacing here
+            instead would under-report every timescale by a factor of lagframes.
         """
         self.net = net.eval()
         for p in self.net.parameters():
@@ -328,6 +338,23 @@ class SRV:
         self.eigvals = None
 
     def timescales(self):
+        """Implied (relaxation) timescales t_i from the SRV eigenvalues.
+
+        Each eigenvalue decays over one lag time tau (== ``self.lagtime``) as
+        ``lambda_i = exp(-tau / t_i)``, hence
+
+            t_i = -tau / ln(lambda_i).
+
+        The lag here is tau -- the same lag at which the eigenvalues were
+        estimated (``dataset.lagframes`` frames apart) -- not the frame spacing;
+        see :class:`SimulationData.__init__`.
+
+        The literature form uses ``ln|lambda_i|``.  The absolute value is
+        deliberately omitted here so that non-physical eigenvalues (noise modes
+        with lambda_i <= 0, or >= 1) surface as nan / negative rather than as
+        spurious finite timescales -- a useful "this mode is noise" flag.  Swap
+        in ``np.log(np.abs(self.eigvals))`` if you prefer the literature form.
+        """
         return -self.lagtime / np.log(self.eigvals)
 
     # -- internals --------------------------------------------------------- #

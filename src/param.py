@@ -46,13 +46,27 @@ class SimulationParameters(DefaultMixin):
     * defaults defined in top of init
     * desired values are replaced by 'replace_defaults'
     * some derivative parameters are then computed from these
+
+    Time vocabulary
+    ---------------
+    The primal time unit here is ``frametime``: the wall-clock time between two
+    successive *saved* frames (Delta t), stored as an OpenMM ``unit`` quantity.
+    Every derived quantity below (``num_frames``, ``timesteps_per_frame``,
+    ``report_interval``, ``ns_per_frame``) is a *per-frame* quantity built from
+    it -- the simulation writes exactly one frame every ``frametime``.
+
+    This class is deliberately agnostic to the lag time ``tau`` and to
+    ``lagframes``: a "transition" spans some integer number of frames, but that
+    number is an *analysis* choice, not a property of the trajectory on disk.
+    ``tau = frametime * lagframes`` is therefore assembled downstream, once, in
+    :class:`SimulationData.__init__` (see its docstring for the full definition).
     """
 
     def __init__(self, **kwargs):
         self.working_dir = "data"
         self.pdb_file = "data/ala2_solv.pdb"
         self.simulation_time = 1 * unit.nanosecond
-        self.lagtime = 1 * unit.picosecond
+        self.frametime = 1 * unit.picosecond  # Delta t: time between saved frames
         self.temperature = 300 * unit.kelvin
         self.timestep = 0.002 * unit.picosecond
         self.friction_coeff = 1 / unit.picosecond
@@ -71,21 +85,21 @@ class SimulationParameters(DefaultMixin):
         # kT as a float, units of kJ/mol
         self.kT = kT_in_kJ_per_mol(self.temperature)
 
-        # take one frame per lagtime.
-        num_frames = self.simulation_time / self.lagtime
+        # take one frame per frametime.
+        num_frames = self.simulation_time / self.frametime
 
-        # simulation must be a perfect multiple of the lagtime
+        # simulation must be a perfect multiple of the frametime
         assert np.isclose(
             num_frames, round(num_frames)
-        ), "Simulations must be a whole number of frames.  Check simulation_time and lagtime"
+        ), "Simulations must be a whole number of frames.  Check simulation_time and frametime"
         self.num_frames = round(num_frames)
 
-        self.timesteps_per_frame = round(self.lagtime / self.timestep)
+        self.timesteps_per_frame = round(self.frametime / self.timestep)
 
         # assuming we always report once per frame
         self.report_interval = self.timesteps_per_frame
 
-        self.ns_per_frame = self.lagtime / unit.nanosecond
+        self.ns_per_frame = self.frametime / unit.nanosecond
 
         # string for labeling simulation output
         self.ns = f"{self.ns_per_frame * self.num_frames:.1f}"

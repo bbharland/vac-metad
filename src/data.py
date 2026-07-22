@@ -19,7 +19,8 @@ def simulation_data(p, subdir=None, lagframes=1, mmap_mode=None):
     ----------
     p : SimulationParameters or Path or str
         Determines the base directory.  A ``SimulationParameters`` also supplies
-        the lagtime; a bare path/string defaults the lagtime to 1.
+        the ``frametime`` (time between saved frames); a bare path/string
+        defaults the frametime to 1.
 
     subdir : None, int, or str
         - ``None``: use the base directory directly.
@@ -27,7 +28,9 @@ def simulation_data(p, subdir=None, lagframes=1, mmap_mode=None):
         - str: use the named subdirectory.
 
     lagframes : int
-        Number of simulation frames corresponding to one lagtime.
+        Number of frames spanning one transition (one lag).  Together with the
+        frametime this fixes the lag time ``tau = frametime * lagframes``; see
+        :class:`SimulationData.__init__` for the full definition.
 
     mmap_mode : None or str
         If given (e.g. ``"r"``), ``.npy`` attributes such as ``features`` and
@@ -40,10 +43,10 @@ def simulation_data(p, subdir=None, lagframes=1, mmap_mode=None):
     """
     if isinstance(p, SimulationParameters):
         basedir = Path(p.working_dir)
-        lagtime = p.lagtime.value_in_unit(unit.picosecond)
+        frametime = p.frametime.value_in_unit(unit.picosecond)
     elif isinstance(p, (str, Path)):
         basedir = Path(p)
-        lagtime = 1
+        frametime = 1
     else:
         raise TypeError(f"Cannot build simulation_data from p of type {type(p).__name__}")
 
@@ -56,14 +59,14 @@ def simulation_data(p, subdir=None, lagframes=1, mmap_mode=None):
     else:
         raise TypeError(f"Cannot handle subdir of type {type(subdir).__name__}")
 
-    return SimulationData(working_dir, lagtime, lagframes, mmap_mode=mmap_mode)
+    return SimulationData(working_dir, frametime, lagframes, mmap_mode=mmap_mode)
 
 
 def simulation_data_test(working_dir, sd, labels):
     """Create and return a new SimulationData object at 'working_dir' for testing purposes.
 
     It will match variables from passed SimulationData object 'sd':
-        * lagtime
+        * frametime, lagframes, lagtime  (kept mutually consistent)
         * items from list 'labels' will be symlinked
     """
 
@@ -75,8 +78,11 @@ def simulation_data_test(working_dir, sd, labels):
         dst.unlink(missing_ok=True)
         dst.symlink_to(src)
 
-    # create new SimulationData object and return it
+    # create new SimulationData object and return it.  Copy the primal
+    # frametime and lagframes; lagtime = frametime * lagframes then follows.
     sd2 = simulation_data(working_dir)
+    sd2.frametime = sd.frametime
+    sd2.lagframes = sd.lagframes
     sd2.lagtime = sd.lagtime
     return sd2
 
@@ -199,22 +205,58 @@ class SimulationData(DataHandles):
         "outfile": "traj.out",
     }
 
-    def __init__(self, working_dir, lagtime, lagframes, mmap_mode=None):
-        """Parameters
-        ----------
-        working_dir : str or Path
-            Directory for this simulation's data files.
-        lagtime : float
-            Time separating transitions (tau, in ps).
+    def __init__(self, working_dir, frametime, lagframes, mmap_mode=None):
+        """Handles for one simulation's data, plus its time vocabulary.
+
+        This is the *single* place the three time quantities are tied together.
+        Downstream code (SRV timescales, ACF integration) should read them from
+        here rather than recomputing them.
+
+        Time vocabulary
+        ---------------
+        frametime : float (or unit)
+            The frame spacing, Delta t: the time between two successive *saved*
+            frames of the trajectory.  This is the primal quantity -- it is a
+            property of the data on disk, set by the OpenMM reporter interval.
+            A float is assumed to be in ps.
+
         lagframes : int
-            Number of simulation frames making up one lagtime.
+            The lag expressed in frames -- the number of frames spanning one
+            "transition" (one lag).  This is the analysis-side integer ``k`` in
+            ``tau = k * frametime``; it is *not* a property of the trajectory,
+            which is why it is supplied here and not in SimulationParameters.
+
+        lagtime : float
+            The lag time tau, the familiar object from the MSM / VAC / TICA
+            literature: the time interval over which a transition is counted and
+            over which the transfer operator / Koopman matrix is estimated.  It
+            is assembled here, once, as
+
+                tau = frametime * lagframes.                              (I)
+
+            An eigenvalue lambda_i estimated at lag tau decays over one lag as
+
+                lambda_i = exp(-tau / t_i),                              (II)
+
+            so the implied (relaxation) timescale of eigenfunction i is
+
+                t_i = -tau / ln(lambda_i)                              (III)
+
+            (the literature writes ln|lambda_i|).  The lag that appears in
+            (II)-(III) is tau, NOT the frame spacing: it must match the lag at
+            which lambda_i was actually estimated (lagframes frames apart), which
+            is exactly what (I) guarantees.  When ``lagframes == 1`` frame
+            spacing and lag time coincide (tau == frametime) and the distinction
+            is invisible -- but only then.
+
         mmap_mode : None or str
             Forwarded to :class:`DataHandles`; if given, ``.npy`` files are
             memory-mapped in that mode instead of read into RAM.
         """
         super().__init__(working_dir, mmap_mode=mmap_mode)
-        self.lagtime = lagtime
+        self.frametime = frametime
         self.lagframes = lagframes
+        self.lagtime = frametime * lagframes  # tau, assembled once (Eq. I)
 
     def save_feature_data(self, periodic=True, recalculate=False, pdbfile=None):
         """Compute and save ``dihedrals`` and ``features`` if missing.

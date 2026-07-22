@@ -43,13 +43,13 @@ positive semidefinite at large lag, but shrinks the tail).
 
 TIMESCALE
 ---------
-tau = int_0^infty C(t) dt  is estimated as  lagtime * tau_int  with the
+tau = int_0^infty C(t) dt  is estimated as  frametime * tau_int  with the
 Madras-Sokal integrated time and automatic windowing,
     tau_int(M) = 1/2 + sum_{k=1}^{M} C(k),
     M = smallest window with M >= c_window * tau_int(M),
 which is the trapezoidal integral (C(0)=1) truncated before the noisy tail.
-The naive  lagtime * ct.sum()  differs in two ways: it is a left Riemann sum
-(overcounts by ~ lagtime/2) and it integrates the entire noisy tail.
+The naive  frametime * ct.sum()  differs in two ways: it is a left Riemann sum
+(overcounts by ~ frametime/2) and it integrates the entire noisy tail.
 """
 
 import numpy as np
@@ -113,19 +113,19 @@ def auto_window(tau_int_running, c_window=5.0):
     return int(np.argmax(ok))
 
 
-def _integrated_time(ct, lagtime, c_window=5.0):
+def _integrated_time(ct, frametime, c_window=5.0):
     """tau (physical units) from a normalized ACF ct (ct[0]=1) via Sokal."""
     tau_running = np.cumsum(ct) - 0.5  # tau_running[M] = 1/2 + sum_{1..M} ct
     M = auto_window(tau_running, c_window)
     tau_int = tau_running[M]  # in frames
-    return lagtime * tau_int, M, tau_int
+    return frametime * tau_int, M, tau_int
 
 
 # --------------------------------------------------------------------------- #
 #  Public API
 # --------------------------------------------------------------------------- #
 def compute_acf(
-    u, lagtime, num_frames_acf, kind="linear", bias="unbiased", c_window=5.0
+    u, frametime, num_frames_acf, kind="linear", bias="unbiased", c_window=5.0
 ):
     """Centered, normalized autocorrelation function and relaxation time.
 
@@ -133,8 +133,14 @@ def compute_acf(
     ----------
     u : array, shape (num_frames,)
         Trajectory of the CV.  For kind='circular', u is an angle in radians.
-    lagtime : float
-        Time between frames; sets the units of tau and theta.
+    frametime : float
+        The frame spacing (Delta t): time between successive samples of ``u``.
+        Sets the physical units of the returned relaxation time and of
+        theta(tau).  This is NOT the MSM lag time tau: the ACF lag axis is
+        measured in frames, so the correct multiplier is the frame spacing, and
+        the lag time never enters an autocorrelation integral.  (For a CV
+        sampled every frame, ``frametime`` is the SimulationData ``frametime``,
+        which equals ``lagtime`` only when ``lagframes == 1``.)
     num_frames_acf : int
         Number of lags to compute (0 ... num_frames_acf-1).
     kind : {'linear', 'circular'}
@@ -162,7 +168,7 @@ def compute_acf(
     c0 = g[0].real if np.iscomplexobj(g) else g[0]
     ct_full = g / c0  # complex if circular
     ct = ct_full.real
-    tau, M, tau_int = _integrated_time(ct, lagtime, c_window)
+    tau, M, tau_int = _integrated_time(ct, frametime, c_window)
     info = {
         "c0": float(c0),
         "window": int(M),
@@ -172,7 +178,7 @@ def compute_acf(
     return tau, ct, info
 
 
-def compute_theta(ct, lagtime, ct_err=None):
+def compute_theta(ct, frametime, ct_err=None):
     """Lag-resolved relaxation time  theta(tau) = -tau / ln C(tau).
 
     Flat (== t1) for a single exponential; drift/curvature exposes
@@ -183,7 +189,7 @@ def compute_theta(ct, lagtime, ct_err=None):
     ----------
     ct : ndarray
         Normalized ACF with ct[0] = 1.
-    lagtime : float
+    frametime : float
         Time between frames.
     ct_err : ndarray, optional
         1-sigma error on C(tau).  If given, the linearized propagation
@@ -196,7 +202,7 @@ def compute_theta(ct, lagtime, ct_err=None):
     theta_err : ndarray            (only if ct_err is not None)
     """
     ct = np.asarray(ct, float)
-    t = lagtime * np.arange(ct.size)
+    t = frametime * np.arange(ct.size)
     lnC = np.log(np.where(ct > 0.0, ct, np.nan))  # mask C <= 0
     theta = np.full_like(ct, np.nan)
     good = np.isfinite(lnC) & (lnC < 0.0)  # keep 0 < C < 1 only
@@ -211,7 +217,7 @@ def compute_theta(ct, lagtime, ct_err=None):
 
 def compute_acf_with_errors(
     u,
-    lagtime,
+    frametime,
     num_frames_acf,
     num_blocks=8,
     kind="linear",
@@ -255,7 +261,7 @@ def compute_acf_with_errors(
     cts, taus = [], []
     for b in blocks:
         tau_b, ct_b, _ = compute_acf(
-            b, lagtime, nlags, kind=kind, bias=bias, c_window=c_window
+            b, frametime, nlags, kind=kind, bias=bias, c_window=c_window
         )
         cts.append(ct_b)
         taus.append(tau_b)
@@ -270,7 +276,7 @@ def compute_acf_with_errors(
 
     # theta per block, then average (robust to the nonlinearity of -t/lnC).
     # Lags where every block has C<=0 are all-NaN; report NaN there quietly.
-    thetas = np.vstack([compute_theta(c, lagtime) for c in cts])
+    thetas = np.vstack([compute_theta(c, frametime) for c in cts])
     n_ok = np.sum(np.isfinite(thetas), axis=0)
     theta_mean = np.full(nlags, np.nan)
     theta_err = np.full(nlags, np.nan)
@@ -282,7 +288,7 @@ def compute_acf_with_errors(
 
     return {
         "lag": np.arange(nlags),
-        "time": lagtime * np.arange(nlags),
+        "time": frametime * np.arange(nlags),
         "ct_mean": ct_mean,
         "ct_err": ct_err,
         "theta_mean": theta_mean,
@@ -293,18 +299,18 @@ def compute_acf_with_errors(
     }
 
 
-def sokal_tau_error(tau_int_frames, window, n_frames, lagtime=1.0):
+def sokal_tau_error(tau_int_frames, window, n_frames, frametime=1.0):
     """Madras-Sokal 1-sigma error on the integrated time (single trajectory):
         sigma(tau_int) ~ tau_int * sqrt(2 (2M+1) / N).
-    Returned in units of `lagtime` (default 1.0 -> frames); pass the real
-    lagtime to get physical time.  Quick analytic estimate; prefer
+    Returned in units of `frametime` (default 1.0 -> frames); pass the real
+    frametime to get physical time.  Quick analytic estimate; prefer
     block/ensemble SEM when feasible.
     """
     rel = np.sqrt(2.0 * (2.0 * window + 1.0) / n_frames)
-    return lagtime * tau_int_frames * rel
+    return frametime * tau_int_frames * rel
 
 
-def compute_acf_original(u, lagtime, num_frames_acf):
+def compute_acf_original(u, frametime, num_frames_acf):
     """Compute autocorrelation function C(t).
 
     June 24, 2026
@@ -319,7 +325,7 @@ def compute_acf_original(u, lagtime, num_frames_acf):
     ----------
     u : array, shape (num_frames,)
         Full trajectory of CV, u(t)
-    lagtime : float
+    frametime : float
         Time separating trajectory frames.  Units will match timescale estimate
     num_frames_acf : int
         How far out to compute ACF (this is expensive).
@@ -340,15 +346,15 @@ def compute_acf_original(u, lagtime, num_frames_acf):
 
     c0 = acf(u, 0)
     ct = np.array([acf(u, t) for t in range(num_frames_acf)]) / c0
-    tau = lagtime * np.sum(ct)
+    tau = frametime * np.sum(ct)
     return tau, ct
 
 
-def compute_acfs(wd, signals, lagtime, num_frames_acf, calculate=True):
+def compute_acfs(wd, signals, frametime, num_frames_acf, calculate=True):
     file = wd / "acfs.pickle"
     if calculate:
         acfs = {
-            label: compute_acf_dataclass(u, lagtime, num_frames_acf)
+            label: compute_acf_dataclass(u, frametime, num_frames_acf)
             for label, u in signals.items()
         }
         save_pickle(file, acfs)

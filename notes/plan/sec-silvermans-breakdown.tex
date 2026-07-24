@@ -1,0 +1,81 @@
+\section{Dealing with a breakdown of Silverman's}
+
+\subsection{Adaptive / local bandwidth KDE}
+Instead of a global $\sigma$, use position-dependent bandwidths.  Key ideas:
+\begin{itemizec}
+    \item Narrow kernels in dense regions (sharp peaks)
+    \item Wide kernels in sparse regions (barriers)
+    \item Examples in literature:
+    \item Adaptive KDE (balloon / sample-point estimators)
+    \item k-nearest-neighbor bandwidth selection
+    \item Diffusion KDE
+\end{itemizec}
+Follow-ups to OPES (e.g. OPES-explore / OPES-metadynamics variants).
+
+Allows:
+\begin{itemizec}
+    \item per-kernel covariance
+    \item metric-based scaling
+\end{itemizec}
+BUT, method is still not fully “standardized” in mainstream OPES workflows.
+
+\subsection{Mixture models instead of KDE}
+Replace KDE with something like:
+\begin{itemizec}
+    \item Gaussian Mixture Models (GMM)
+    \item Variational density estimators
+\end{itemizec}
+This idea appears earlier in:
+\begin{itemizec}
+    \item Gaussian-mixture umbrella sampling (Maragakis et al.)
+    \item Later ML-based approaches
+\end{itemizec}
+Benefits
+\begin{itemizec}
+    \item Explicitly models multimodality
+    \item Each mode gets its own covariance
+\end{itemizec}
+Other approaches
+\begin{itemizec}
+    \item Variational Enhanced Sampling (VES)
+    \item Neural density estimators (normalizing flows)
+\end{itemizec}
+Tradeoff:
+\begin{itemizec}
+    \item Requires optimization
+    \item Less “plug-and-play” than OPES
+\end{itemizec}
+
+\subsection{Biasing without explicit density estimation}
+Methods:
+\begin{itemizec}
+    \item Variational Enhanced Sampling (VES)
+    \item Neural network biases
+    \item Reinforcement learning biasing
+\end{itemizec}
+This handles the bandwidth problem and can represent sharp features naturally.
+It is more complex, however, and requires basis choice / neural architecture.
+
+\subsection{Density-dependent bandwidth (Abramson-type)}
+Shrink bandwidth where density is high:
+\[
+    \sigma_k \propto P(s_k)^{-\alpha} \quad \alpha \approx \half
+\]
+
+\subsection{k-nearest-neighbor (kNN) bandwidth}
+Idea = use bandwidth based on nearest neighbour bandwidth.  Something to look into.  Less intersting than GMM. Appears in:
+\begin{itemizec}
+    \item Bayesian reconstruction methods
+    \item Some Gaussian process / regression-based FES methods
+    \item Kernel compression literature
+\end{itemizec}
+
+\subsection{Adaptive Gaussian MetaD}
+Replace OPES altogether.  2012, Branduardi.  MetaD Gaussians
+
+\subsection{Machine learning density models}
+Increasingly used:
+\begin{itemizec}
+    \item Normalizing flows
+    \item Neural density estimators
+\end{itemizec}

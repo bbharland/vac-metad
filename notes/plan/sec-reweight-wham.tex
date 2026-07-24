@@ -1,0 +1,291 @@
+\section{Reweighting, WHAM}
+I am doing enhanced sampling simulations of molecular systems.  There are a number of scenarios:
+\begin{enumerate}
+    \item Simgle unbiased ensemble
+    \[
+        \langle O\rangle = \int\myd{s}p(s)\,O(s)
+        =\lim_{N\rightarrow\infty} \frac{1}{N}\sum_{k=1}^N O(s_k), ~s_k\sim p
+    \]
+    Unbiased distribution
+    \[
+    p(s) = \frac{\mye^{-\beta F(s)}}{Z}
+    \]
+    Biased distribution with time-dependent bias potential:
+    \[
+        p_t(s) = \frac{\mye^{-\beta [F(s)+ w_t(s)}}{Z_t}
+    \]
+    Reweighting factor for Monte Carlo sampling using biased simulation data:
+    \[
+        W_t(s_t) = \mye^{\beta[w_t(s_t)-c_t]} ,~~~\mye^{-\beta c_t} = \frac{Z_t}{Z}
+    \]
+    Estimating factors involving $c_t$ using biased simulation data
+    \[
+        \mye^{-\beta c_t} \approx \frac{\sum_{t'=1}^T W_{t'}(s_{t'})\mye^{-\beta w_t(s_{t'})}}{\sum_{t'=1}^T W_{t'}(s_{t'})}
+    \]
+    where the weights themselves depend on $c_t$.
+\end{enumerate}
+
+\subsection{Connection Between Reweighting and WHAM}
+
+The key point is that there are two distinct kinds of weights:
+
+\begin{enumerate}
+    \item the \emph{single-ensemble reweighting factor}, and
+    \item the \emph{multi-ensemble WHAM combination weights}.
+\end{enumerate}
+
+These serve different purposes.
+
+\subsection{Single-Ensemble Reweighting}
+
+Suppose the unbiased distribution is
+
+\[
+p(s)=\frac{e^{-\beta F(s)}}{Z}.
+\]
+
+A biased ensemble with time-dependent bias potential \(w_t(s)\) samples
+
+\[
+p_t(s)=\frac{e^{-\beta[F(s)+w_t(s)]}}{Z_t}.
+\]
+
+Define the reweighting factor
+
+\[
+W_t(s)=e^{\beta[w_t(s)-c_t]},
+\]
+
+with
+
+\[
+e^{-\beta c_t}=\frac{Z_t}{Z}.
+\]
+
+Then
+
+\[
+p(s)=p_t(s)e^{\beta[w_t(s)-c_t]}.
+\]
+
+Thus, the factor
+
+\[
+e^{\beta[w_t(s)-c_t]}
+\]
+
+removes the umbrella bias and converts samples from the biased ensemble into unbiased samples.
+
+This is exactly the same structure as Roux Eq.~(7),
+
+\[
+[(p(\xi))]^{\mathrm{unbiased}}_{(i)}
+=
+e^{+\beta w_i(\xi)}
+(p(\xi))_{(i)}
+e^{-\beta F_i}.
+\]
+
+The correspondence is
+
+\[
+F_i \leftrightarrow c_i.
+\]
+
+Indeed, Roux defines
+
+\[
+e^{-\beta F_i}
+=
+\left\langle e^{-\beta w_i}\right\rangle
+=
+\frac{Z_i}{Z},
+\]
+
+which is identical to the normalization ratio above.
+
+At this stage, we are still dealing with a \emph{single} ensemble.
+
+\subsection{WHAM Introduces a Second Weighting Layer}
+
+Suppose we now have many umbrella windows \(i=1,\dots,K\).
+
+Each window produces an unbiased estimator
+
+\[
+\hat p_i(s)
+=
+p_i(s)e^{\beta[w_i(s)-F_i]}.
+\]
+
+If sampling were infinite, all \(\hat p_i(s)\) would agree exactly.
+
+However, with finite sampling:
+
+\begin{itemize}
+    \item some windows are noisy,
+    \item some regions are poorly sampled,
+    \item overlap between windows may be uneven.
+\end{itemize}
+
+WHAM asks:
+
+\[
+\textit{How should all these estimators be combined optimally?}
+\]
+
+\subsection{The WHAM Equation}
+
+Roux Eq.~(6) gives
+
+\[
+p(s)
+=
+\frac{
+\displaystyle
+\sum_i n_i p_i(s)
+}{
+\displaystyle
+\sum_j n_j e^{-\beta[w_j(s)-F_j]}
+}.
+\]
+
+This can be rewritten as
+
+\[
+p(s)
+=
+\sum_i a_i(s)\,\hat p_i(s),
+\]
+
+where
+
+\[
+a_i(s)
+=
+\frac{
+n_i e^{-\beta[w_i(s)-F_i]}
+}{
+\displaystyle
+\sum_j n_j e^{-\beta[w_j(s)-F_j]}
+}.
+\]
+
+The factors \(a_i(s)\) are the WHAM combination weights.
+
+Thus there are \emph{two} layers:
+
+\begin{enumerate}
+    \item Bias removal:
+    \[
+    e^{\beta[w_i(s)-F_i]},
+    \]
+    which converts a biased distribution into an unbiased one.
+
+    \item Statistical combination:
+    \[
+    a_i(s),
+    \]
+    which combines all windows into a minimum-variance estimate.
+\end{enumerate}
+
+\subsection{Interpretation of the WHAM Weights}
+
+Suppose \(s\) lies near the center of umbrella \(i\). Then
+
+\[
+w_i(s)\approx 0,
+\]
+
+so umbrella \(i\) samples that region efficiently.
+
+For another umbrella \(j\) far away,
+
+\[
+w_j(s)\gg 1,
+\]
+
+and that window contributes very little statistical information there.
+
+Consequently,
+
+\[
+a_i(s)
+\propto
+n_i e^{-\beta[w_i(s)-F_i]}
+\]
+
+gives large weight to windows that sample \(s\) well.
+
+Thus:
+
+\begin{itemize}
+    \item the reweighting factor removes the bias,
+    \item the WHAM factor determines statistical confidence.
+\end{itemize}
+
+These are conceptually distinct.
+
+\subsection{Relation to Multi-Ensemble Monte Carlo}
+
+WHAM is fundamentally a multi-ensemble importance sampling method.
+
+Each umbrella window samples
+
+\[
+\pi_i(x)
+\propto
+e^{-\beta[U(x)+w_i(x)]}.
+\]
+
+The unknown constants \(F_i\) are relative free energies,
+
+\[
+F_i
+=
+-k_B T \ln \frac{Z_i}{Z}.
+\]
+
+WHAM determines the \(F_i\) self-consistently so that all windows agree on the same underlying unbiased distribution.
+
+This is closely related to:
+
+\begin{itemize}
+    \item Bennett acceptance ratio (BAR),
+    \item Ferrenberg--Swendsen reweighting,
+    \item MBAR (multistate Bennett acceptance ratio).
+\end{itemize}
+
+In fact:
+
+\[
+\begin{aligned}
+\text{BAR} &\rightarrow \text{two ensembles}, \\
+\text{WHAM} &\rightarrow \text{histogram formulation}, \\
+\text{MBAR} &\rightarrow \text{continuous/unbinned generalization}.
+\end{aligned}
+\]
+
+\subsection{Answer to the Original Question}
+
+Yes.
+
+Roux Eq.~(7) gives the unbiased estimator from a single window.
+
+WHAM then introduces an additional weighting factor to combine all windows optimally.
+
+Schematically:
+
+\[
+\text{biased histogram}
+\quad
+\overset{\text{Eq.~7}}{\longrightarrow}
+\quad
+\text{unbiased local estimate}
+\quad
+\overset{\text{WHAM}}{\longrightarrow}
+\quad
+\text{global optimal estimate}.
+\]
+
+Thus the WHAM weights are an additional layer on top of the single-window reweighting factors.

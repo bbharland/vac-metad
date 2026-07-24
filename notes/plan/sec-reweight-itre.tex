@@ -1,0 +1,163 @@
+\section{Reweighting, ITRE}
+The correct weights for reweighting ES data from a time-dependent bias $V_t(s)$ is found by writing out the desired ensemble $p(s)$ and the instantaneous biased $p_t(s)$, time $t$
+\[
+    W_t(s_t) = \frac{Z_t}{Z}\mye^{+\beta V_t(s_t)}
+    = \mye^{+\beta[V_t(s_t)-c_t]}
+\]
+This defines the so-called bias shift $c_t$.  The key observation is that the first part of the weight is simple and permanently fixed
+\[
+    A_t := \mye^{+\beta V_t(s_t)}
+\]
+The difficulty is in solving for
+\[
+    B_t := \mye^{-\beta c_t} = \frac{Z_t}{Z} = \langle \mye^{-\beta V_t} \rangle
+\]
+The average above is over the unbiased ensemble.  The basic idea of ITRE is to iteratively solve for them using the definition for the KDE estimate for $p(s)$ at time $t$
+\[
+p(s,t) = \sum_{t'}^t \widetilde{W}_{t'} G(s-s_{t'}),\quad
+\widetilde{W}_{t'} = \frac{W_{t'}}{\sum_{t''}^{t}W_{t''}}
+\]
+Because in metadynamics $V_t$ is changing so often, there will be many $B_t$ terms to estimate
+\[
+    B_t = \int\myd{s}\tilde{p}(s)\mye^{-\beta V_t(s)},\quad
+    \tilde{p}(s) = \frac{p(s)}{\int\myd{s}p(s)}
+\]
+The trick is to use the current best estimate for $p(s)$, $p(s,t)$ in this expression and then use theee terms to construct a new set of weights $W_t$.  Iterate until self-consistent.
+
+\subsection{Explore efficient computation of Gaussian integrals}
+Combining the two ITRE equations (and assuming that the KDE representation si properly normalized, \emph{e.g.} ignoring the renormalization) gives
+\[
+    B_T = \frac{\sum_{t=0}^T A_tB_t G_{tT}}{\sum_{t=0}^T A_tB_t}
+\]
+with
+\[
+    G_{tT} = \int\myd{s}\mye^{-\beta V_T(s)}G(s-s_t)
+\]
+So the question is, is there anything here?  Is there a tractable way of efficiently computing integrals of this type?  MANY of them would need computing
+\[
+    n\times T
+\]
+where $T$ is the total number of frames used in the KDE representation of $p(s)$ and $n$ is the total number of metadynamics bias potentials.
+
+A possibility is that KDE compression can reduce this number.
+
+A possibility is that the $V_t(s)$ functions being Gaussians themselves might lead to something clever.  ChagGPT says no.
+
+ChatGPT recommends, for integrals of the form
+\[
+    \int\myd{x}\mye^{-f(x)}G(x-x_0)
+\]
+\begin{enumeratec}
+    \item Laplace/saddle point
+    \begin{itemizec}
+        \item Laplace approximation
+        \item Gaussian integral with nonquadratic potential
+        \item MacKay-Laplace approximation
+    \end{itemizec}
+    \item Delta method (see notes/plan/gaussian-.pdf)
+\end{enumeratec}
+
+\subsection{Explore nature of $B_t$ integral}
+Main practical issue in
+\[
+    c_t = \kT\log\myE{\mye^{-\beta V_t(s)}}
+\]
+\begin{enumeratec}
+    \item variance/numerical stability of expectation/avg.
+    \item how to re-use computational work across set of $V_t$
+\end{enumeratec}
+ChatGPT suggests
+\begin{enumeratec}
+    \item stable evaluation, log-sum-exp trick.  log-mean-exp.  ``Numerically stable free energy''  ``Cumulant generating log-moment''
+    \item Free energy
+    \begin{itemizec}
+        \item Zwanzig exponential averaging (free energy perturbation)
+        \item Jarzynski equality has same structure
+    \end{itemizec}
+    \item Monte carlo
+    \begin{itemizec}
+        \item quasi-Monte carlo (QMC)
+        \item stratified sampling / mixture importance sampling
+        \item control variates
+    \end{itemizec}
+    \item Density estimation and integration.  ``Importance sampling using emiracle distribution.''
+\end{enumeratec}
+ChatGPT: ``Best first option'' = data representation (weighted MC average).  This would be to compute and store
+\[
+    C_{tt'} = \mye^{-\beta V_t(s_{t'})}
+\]
+For each new frame $s_T$, must compute full set of potentials
+\[
+    \{\mye^{-\beta V_t(s_T)}\}_{t=0}^T \quad \{V_t(s_T)\}_{t=0}^T
+\]
+
+\subsection{Representing PDFs: exact $p(s)$, $B_t$}
+This is needed to benchmark different approaches for computing the weights.
+
+The representation of $p(s)$ is of central importance.  There are some options
+\begin{enumeratec}
+    \item histogram (should be equivalent to MC, so can skip)
+    \item KDE (need to explore bandwidths)
+    \item GMM (need to explore scikit-learn Bayesian Gaussian Mixture)
+    \item GMM / MC (sample the GMM)
+    \item Gaussian processes
+\end{enumeratec}
+
+ChatGPT says
+\begin{enumeratec}
+    \item weighted data representation = ``weighted empiracle measure''
+    \[
+        \langle A\rangle = \sum_k \tilde{W}_k A(x_k)
+    \]
+    \item KDE: recommend if you intend to do grid-based quadrature
+    \begin{itemizec}
+        \item sensitive to bandwidth
+        \item robust non-parametric method
+        \item expensive scaling with data size
+    \end{itemizec}
+    \item GMM: compact, easy to sample
+    \begin{itemizec}
+        \item must choose $K$
+        \item may struggle with sharp peaks if $K$ too small
+        \item excellent if $A(x)$ gives analytical integrals
+    \end{itemizec}
+    \item Normalizing flow
+    \begin{itemizec}
+        \item fast sampling once trained
+        \item need lots of data for training
+        \item well-separated modes are a challenge
+        \item overkill for 2D
+    \end{itemizec}
+\end{enumeratec}
+
+
+\subsection{Validating FESs}
+\begin{enumeratec}
+    \item barrier heights
+    \item relative well heights
+\end{enumeratec}
+
+\subsection{Integrals: grids vs. MC}
+\textbf{Adaptive quadrature}: in the case that you're doing any integrals over grids, look into existing python packages for this.  Look at cost-savings over naive grids.  ``Deterministic quadrature on adaptive meshes.''
+
+Is MC the way to go?  Not likely.  Look into QMC (Sobol-Halton).  The structure of $B_t$ makes for a challenging avg. to sample/converge.
+
+\subsection{TODO}
+PDFs, exact $p(s)$
+\begin{itemizec}
+    \item scikit learn Bayesian Gaussian Mixture
+    \item investigate Gaussian process package
+    \item investigate metrics to compare PDF representations
+    \item other?  Look at recent research
+    \item explore mathematical connection between simple KDE and ``importance sampling using the empiracle distribution''.  They must be equivalent in the limit of delta function.
+    \item QMC (Sobol-Halton)
+\end{itemizec}
+Computing ITRE terms
+\begin{itemizec}
+    \item Work out reconstructing $V_t$ from WTMetaD simulation data
+    \item Work out exact $B_t$ terms using these $V_t$
+    \item Look at typical size distributions of $A_t$, $B_t$, $G_{tt'}$ terms
+    \item Suppose there is a way to compute $G_{tt'}$ terms.  Implement the algorithm as it stands and compare to ``exact'' $B_t$ terms.
+    \item KDE compression in reducing the number of $G_{tt'}$ terms (or computational effort in computing individual ones)
+    \item ChatGPT:  feed it the 2020, Giberti ITRE paper and think up some good questions.  E.g. sort out the renormaization of $p(s)$
+\end{itemizec}

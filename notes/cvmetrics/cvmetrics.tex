@@ -1,0 +1,862 @@
+\documentclass[12pt, a4paper]{article}
+
+%%------------------------------------------------------------------
+%% Packages
+%%------------------------------------------------------------------
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{amsmath, amssymb}
+\usepackage{geometry}
+\geometry{top=2.5cm, bottom=2.5cm, left=2.5cm, right=2.5cm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{caption}
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks = true,
+  linkcolor  = blue,
+  citecolor  = blue,
+  urlcolor   = blue
+}
+\usepackage{natbib}
+\bibliographystyle{unsrtnat}
+\usepackage{parskip}
+\setlength{\parindent}{0pt}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\titleformat{\section}{\large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{1em}{}
+
+%%------------------------------------------------------------------
+%% Metadata
+%%------------------------------------------------------------------
+\title{\textbf{Assessing the Quality of Collective Variables in\\
+Molecular Dynamics Enhanced Sampling:\\
+A Review of Current Metrics and Methods}}
+\author{Prepared for: B.~Bharland\\[6pt]
+\small Computational Biophysics / Enhanced Sampling Group}
+\date{June 2026}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+%%==================================================================
+\section{Introduction}
+%%==================================================================
+
+Enhanced sampling methods such as metadynamics~\citep{Laio2002}, 
+well-tempered metadynamics~\citep{Barducci2008}, 
+umbrella sampling, and replica exchange rely critically on a small set 
+of \emph{collective variables} (CVs, also called order parameters or 
+reaction coordinates) that encode the slow, large-scale motions 
+relevant to the physical or chemical process under study.  When CVs are 
+learned from simulation data---for instance by training a neural network 
+on trajectory data---an immediate and practically important question 
+arises: \textit{how good are the resulting CVs?}
+
+This question has no single universal answer, because ``quality'' can be 
+defined from several complementary perspectives:
+\begin{enumerate}[noitemsep]
+  \item \textbf{Kinetic quality}: Do the CVs correctly capture the slowest 
+        dynamical modes, maximising timescale separation?
+  \item \textbf{Thermodynamic quality}: Does biasing along the CVs lead to 
+        rapid, converged estimates of the free energy?
+  \item \textbf{Mechanistic quality}: Do the CVs identify the transition 
+        state ensemble and the dominant reaction mechanism?
+  \item \textbf{Informational quality}: Do the CVs retain maximum mutual 
+        information about the microscopic slow coordinates?
+\end{enumerate}
+
+This report reviews the state of the art (roughly 2016--2025) in CV 
+quality assessment, organised by the dominant methodological paradigm.  
+Section~\ref{sec:committor} introduces the committor function as the 
+theoretical gold standard.  Sections~\ref{sec:kinetic} 
+and~\ref{sec:correlation} cover kinetic-based and time-correlation-based 
+metrics, respectively.  Section~\ref{sec:vamp} discusses variational 
+approaches and the VAMP score.  Sections~\ref{sec:freeenergy} 
+and~\ref{sec:infotheory} cover free-energy convergence and 
+information-theoretic metrics.  Section~\ref{sec:ml} summarises 
+machine-learning frameworks that incorporate quality metrics by 
+construction.  Section~\ref{sec:summary} provides an overall comparison 
+and practical recommendations.
+
+%%==================================================================
+\section{The Theoretical Gold Standard: The Committor Function}
+\label{sec:committor}
+%%==================================================================
+
+\subsection{Definition and properties}
+
+For a system characterised by two metastable states $A$ (reactant) and 
+$B$ (product), the \emph{committor function} $q(\mathbf{x})$ is defined 
+as the probability that a trajectory initiated at configuration 
+$\mathbf{x}$ with momenta drawn from the Boltzmann distribution will 
+reach $B$ before $A$~\citep{EWainanBerkovitz2004}:
+\begin{equation}
+  q(\mathbf{x}) = P\bigl[\text{reach }B \text{ before }A \mid \mathbf{x}\bigr].
+\end{equation}
+The committor satisfies $q(\mathbf{x})=0$ for $\mathbf{x}\in A$ and 
+$q(\mathbf{x})=1$ for $\mathbf{x}\in B$, and it is the solution to 
+the backward Kolmogorov (Fokker--Planck) equation in the transition 
+region.  Crucially, the committor is the \emph{optimal one-dimensional 
+reaction coordinate} in the sense that its level sets ($q=\text{const}$) 
+are the isocommittor (isoreactive) surfaces---the natural dividing 
+surfaces of transition state theory.
+
+Any candidate CV $s(\mathbf{x})$ can therefore be assessed by asking how 
+well its level sets approximate the isocommittor surfaces 
+of the true committor.
+
+\subsection{The committor histogram test}
+
+The classical operational test~\citep{Du1998,Geissler1999} is:
+\begin{enumerate}[noitemsep]
+  \item Identify configurations at the putative dividing surface 
+        (where $s=s^*$, nominally the transition state).
+  \item Launch short unbiased MD trajectories from each such 
+        configuration with random momenta.
+  \item Record whether each trajectory reaches $A$ or $B$ first and 
+        compute the empirical committor $\hat{q}$.
+  \item \textbf{Quality criterion}: If $\hat{q}$ is narrowly distributed 
+        around $0.5$, the CV is good; a broad or bimodal distribution 
+        signals that important slow coordinates are missing.
+\end{enumerate}
+This test is computationally expensive but remains the most direct 
+validation available.
+
+\subsection{Machine-learning approaches to computing the committor}
+
+Recent work has made committor-based validation far more practical by 
+using neural networks to \emph{learn} the committor directly.  Notably:
+
+\begin{itemize}[noitemsep]
+  \item \textbf{Committor-consistent variational string method}~\citep{Li2024CCVSM}: 
+        Uses iterative committor computation via variational principles to 
+        refine the minimum free-energy path and the transition state 
+        ensemble simultaneously.
+  \item \textbf{Committor-regularised learning of differentiable CVs} 
+        (ChemRxiv 2025,~\citealt{Bonati2025CommittorReg}): Introduces a 
+        regularisation term that penalises deviations of the learned CV 
+        from committor-like behaviour, directly combining 
+        interpretability (via physically meaningful descriptors) with 
+        committor accuracy.
+  \item \textbf{Self-consistent iterative committor sampling}~\citep{Kang2024}: 
+        Bootstraps the committor from a current estimate and uses it to 
+        guide trajectory sampling, achieving efficient TSE sampling and 
+        rate computation.
+  \item \textbf{Committor flow (data-driven, 2025)}~\citep{CommittorFlow2025}: 
+        Uses normalising flows to parametrise the committor, enabling 
+        data-efficient learning of transition mechanism and quality 
+        assessment from short trajectory fragments.
+\end{itemize}
+
+The \texttt{mlcolvar} library~\citep{Bonati2023mlcolvar} provides a 
+practical tutorial and implementation for learning the committor as a 
+CV directly from labelled trajectory data.
+
+%%==================================================================
+\section{Kinetic-Based Quality Metrics}
+\label{sec:kinetic}
+%%==================================================================
+
+\subsection{Barrier crossing rates as a direct quality indicator}
+
+Perhaps the most physically intuitive test of a CV is whether it 
+correctly captures barrier-crossing kinetics.  If the projected dynamics 
+along the CV reproduce the true transition rates---as estimated from long 
+unbiased simulations, transition interface sampling (TIS), or forward 
+flux sampling (FFS)---the CV is considered high quality.  
+
+In the context of metadynamics, reweighted kinetics can be extracted 
+via the \emph{infrequent metadynamics} protocol~\citep{Tiwary2015IM}:
+\begin{enumerate}[noitemsep]
+  \item Deposit bias slowly (large deposition time $\tau_G$) so that the 
+        barrier is rarely filled and individual transition times $t_i$ 
+        can be identified.
+  \item Apply the reweighting factor $e^{V(s,t)/k_BT}$ to correct each 
+        observed transition time.
+  \item Fit the corrected times to a Poisson distribution.
+  \item \textbf{Quality criterion}: Passing a Kolmogorov--Smirnov (KS) 
+        test against the ideal exponential distribution confirms that the 
+        bias is deposited quasi-statically, i.e.\ that the CV captures 
+        all relevant slow modes and no unphysical acceleration has 
+        occurred.
+\end{enumerate}
+A failed KS test is an unambiguous signal that the CV set is 
+\emph{incomplete}---important slow degrees of freedom are not biased 
+and ``hidden'' recrossings corrupt the kinetics.
+
+\subsection{Spectral Gap Optimization of Order Parameters (SGOOP)}
+\label{sec:sgoop}
+
+SGOOP~\citep{Tiwary2016SGOOP} formulates CV quality as a 
+\emph{spectral gap maximisation} problem.  The key objects are:
+\begin{enumerate}[noitemsep]
+  \item A \emph{dictionary} of candidate order parameters 
+        $\{\phi_i(\mathbf{x})\}$.
+  \item A one-dimensional projected dynamics on a linear combination 
+        $s = \sum_i w_i \phi_i$.
+  \item The \emph{rate matrix} $\mathbf{K}$ of the coarse Markov model 
+        built on discretised $s$ values.
+\end{enumerate}
+The spectral gap $\Delta\lambda = \lambda_1 - \lambda_2$ (where 
+$\lambda_1=0$ and $\lambda_2$ is the second eigenvalue) quantifies 
+timescale separation.  A large $\Delta\lambda$ means that the slow 
+process is well-separated from fast fluctuations:
+\begin{equation}
+  \{w_i^*\} = \operatorname*{arg\,max}_{\{w_i\}} \Delta\lambda(s).
+\end{equation}
+The optimisation is performed using Maximum Caliber~\citep{Jaynes1980} 
+to build the rate matrix from short unbiased (or reweighted biased) 
+trajectories.  A multi-dimensional extension (MD-SGOOP)~\citep{Smith2018SGOOP} 
+allows sequential construction of higher-dimensional RC sets.
+
+SGOOP is particularly valuable as a \emph{diagnostic tool}: given any 
+candidate CV (including those learned by neural networks), one can 
+compute its associated spectral gap and rank it against alternatives, 
+without running additional simulations.
+
+\subsection{Markov State Model validation}
+
+Markov State Models (MSMs)~\citep{Pande2010} provide a complementary 
+kinetic quality assessment framework.  After projecting trajectories 
+onto a candidate CV set and building a discrete-state MSM, quality is 
+assessed by:
+\begin{itemize}[noitemsep]
+  \item \textbf{Implied timescales test}: Slow implied timescales should 
+        plateau as the MSM lag time $\tau$ increases.  Non-convergence 
+        indicates the CV is not Markovian at that resolution.
+  \item \textbf{Chapman--Kolmogorov test}: The propagated MSM should 
+        agree with direct dynamics at multiples of the lag time.
+  \item \textbf{Number and quality of metastable states} (e.g.\ via 
+        PCCA+): A good CV set should yield well-separated metastable 
+        macrostates.
+\end{itemize}
+
+%%==================================================================
+\section{Time-Correlation-Based Quality Metrics}
+\label{sec:correlation}
+%%==================================================================
+
+\subsection{Autocorrelation function and decorrelation time}
+
+The \emph{normalised autocorrelation function} (NACF) of a CV 
+$s(t)$ is
+\begin{equation}
+  C_s(\tau) = \frac{\langle \delta s(t+\tau)\,\delta s(t)\rangle}
+                   {\langle \delta s^2\rangle},
+  \quad \delta s = s - \langle s \rangle.
+\end{equation}
+The decorrelation (or integrated autocorrelation) time is
+\begin{equation}
+  \tau_{\mathrm{int}} = \int_0^\infty C_s(\tau)\,\mathrm{d}\tau.
+\end{equation}
+A long $\tau_{\mathrm{int}}$ signals that the CV describes a slow 
+mode---desirable for identifying the relevant process---but it does not 
+by itself confirm that all slow modes are captured.  In the context of 
+enhanced sampling, a good CV will have a rapidly decaying NACF 
+\emph{after} the bias has been applied (indicating efficient exploration), 
+while its unbiased NACF should decay slowly (confirming it genuinely 
+encodes a rare event).
+
+\subsection{Time-Lagged Independent Component Analysis (TICA)}
+\label{sec:tica}
+
+TICA~\citep{Molgedey1994,Perez2013TICA} finds the linear combinations of 
+input features that maximise time-lagged autocorrelation:
+\begin{equation}
+  \max_{\mathbf{w}} \; \frac{\mathbf{w}^\top \mathbf{C}(\tau) \mathbf{w}}
+                             {\mathbf{w}^\top \mathbf{C}(0) \mathbf{w}},
+\end{equation}
+where $\mathbf{C}(\tau)_{ij} = \langle \phi_i(t)\,\phi_j(t+\tau)\rangle$ 
+is the time-lagged cross-correlation matrix and $\mathbf{C}(0)$ is the 
+zero-lag covariance.  The leading TICA components (TICs) are the slowest 
+linear modes of the system and serve directly as CVs.
+
+\textbf{Quality criterion}: The TICA eigenvalue $\mu_k$ of the $k$-th 
+TIC is related to its implied timescale by 
+$t_k = -\tau/\ln|\mu_k|$.  A large $t_k$ indicates that TIC $k$ 
+encodes a genuinely slow mode.
+
+\textbf{Recent development---tICA-metadynamics}~\citep{Smith2024tICAMeta}: 
+TICA-derived CVs are used directly in metadynamics, achieving $\sim$1.5$\times$ 
+faster convergence of free energy surfaces and correct recovery of 
+kinetics compared to intuition-based CVs.  Care must be taken to 
+correct for periodic boundary artefacts in translational CVs and to 
+apply trajectory reweighting when constructing TICA from biased data.
+
+\subsection{Deep-TICA}
+
+Deep-TICA~\citep{DeepTICA2021} extends TICA using neural networks as 
+basis functions, enabling identification of \emph{non-linear} slow 
+modes:
+\begin{equation}
+  \max_{\boldsymbol{\theta}} \; 
+  \frac{\mathbf{f}_{\boldsymbol\theta}^\top \mathbf{C}(\tau) 
+        \mathbf{f}_{\boldsymbol\theta}}
+       {\mathbf{f}_{\boldsymbol\theta}^\top \mathbf{C}(0) 
+        \mathbf{f}_{\boldsymbol\theta}},
+\end{equation}
+where $\mathbf{f}_{\boldsymbol\theta}(\mathbf{x})$ is the neural network 
+output.  By maximising this objective (related to the Koopman operator 
+approximation), Deep-TICA identifies the slowest non-linear dynamical 
+modes.  This is particularly valuable when limited, non-equilibrium 
+trajectories are available, as demonstrated in recent work on slow 
+dynamics from short simulations~\citep{SlowModes2025}.
+
+%%==================================================================
+\section{Variational Approaches and the VAMP Score}
+\label{sec:vamp}
+%%==================================================================
+
+\subsection{The variational approach to conformational dynamics (VAC/VAMP)}
+
+The Variational Approach for Conformational dynamics (VAC) and its 
+non-reversible generalisation VAMP~\citep{Wu2020VAMP} provide a 
+rigorous upper-bound principle: \emph{any} approximation of the 
+dominant Koopman eigenfunctions yields a score that is bounded by the 
+true value.  The VAMP-$r$ score is defined as
+\begin{equation}
+  \mathcal{V}_r(\mathbf{f}) = 
+  \left\|\mathbf{C}(0)^{-1/2}\,\mathbf{C}(\tau)\,\mathbf{C}(\tau)^\top
+         \,\mathbf{C}(0)^{-1/2}\right\|_{S_r},
+\end{equation}
+where $\|\cdot\|_{S_r}$ is the Schatten-$r$ norm and $\mathbf{f}$ is 
+any set of feature functions.  Maximising VAMP-2 is equivalent to 
+finding the best rank-$k$ approximation to the transfer operator.
+
+\textbf{Quality criterion}: A higher VAMP-2 score indicates better 
+capture of the slow dynamics.  Importantly, the score can be computed 
+from data alone and used for cross-validation and hyperparameter 
+selection without any reference simulation.
+
+\subsection{VAMPnets}
+
+VAMPnets~\citep{Mardt2018VAMPnets} couple the VAMP score to a deep 
+neural network architecture, performing end-to-end optimisation of:
+\begin{enumerate}[noitemsep]
+  \item Feature transformation (encoder).
+  \item Soft state assignment (clustering).
+  \item MSM estimation.
+\end{enumerate}
+The VAMP-2 score is the training objective, so the network is directly 
+optimised for kinetic quality.  Extensions include:
+\begin{itemize}[noitemsep]
+  \item \textbf{GraphVAMPnets}~\citep{GraphVAMPnets2023}: Replaces the 
+        standard encoder with a graph neural network (GNN), enabling 
+        permutation- and rotation-invariant CV discovery, applied 
+        successfully to self-assembly kinetics.
+  \item \textbf{Independent Markov Decomposition}~\citep{Hempel2022IMD}: 
+        Decomposes large macromolecules into independent Markovian 
+        subsystems, using VAMP scores to validate each subsystem's CV 
+        independently.
+\end{itemize}
+
+%%==================================================================
+\section{Free-Energy Convergence as a Quality Proxy}
+\label{sec:freeenergy}
+%%==================================================================
+
+The most direct practical test of CV quality in metadynamics is whether 
+the reconstructed free energy surface (FES) converges.
+
+\subsection{Block analysis and running averages}
+
+Splitting the trajectory into blocks and computing the FES 
+independently for each block gives a convergence profile.  A 
+well-chosen CV leads to rapid convergence and small block-to-block 
+variance.  The difference between FES estimates at successive times,
+\begin{equation}
+  \varepsilon(t) = \left\|F(s,t) - F(s,t-\Delta t)\right\|,
+\end{equation}
+is a standard convergence diagnostic in well-tempered 
+metadynamics~\citep{Barducci2008}.
+
+\subsection{Mean Force Integration (MFI)}
+
+The MFI approach~\citep{Bjola2024MFI} estimates the FES by 
+integrating the mean force along the CV from multiple independent 
+(potentially asynchronous) biased simulations:
+\begin{equation}
+  F(s) = -\int_{s_0}^{s} \langle f(s') \rangle\,\mathrm{d}s',
+\end{equation}
+where $\langle f(s)\rangle$ is the reweighted mean force at value $s$.  
+The variance of the mean force provides an intrinsic error estimate, 
+making MFI a robust convergence metric that is agnostic to the specific 
+biasing protocol.
+
+\subsection{Effective CVs via metadynamics of paths}
+
+\citet{Muller2024EffCVs} propose learning CVs from path-metadynamics 
+data and assessing them by the rate of FES convergence.  CVs that lead 
+to smooth, rapidly converged FES with clear barriers are preferred over 
+those yielding rugged or slowly-converging surfaces.
+
+%%==================================================================
+\section{Information-Theoretic Metrics}
+\label{sec:infotheory}
+%%==================================================================
+
+\subsection{Mutual information}
+
+The \emph{mutual information} between a candidate CV $s$ and a set 
+of reference slow coordinates $\{\phi_k\}$ quantifies how much 
+information $s$ encodes about the important processes:
+\begin{equation}
+  I(s;\phi_k) = \sum_{s,\phi_k} P(s,\phi_k)\ln\frac{P(s,\phi_k)}{P(s)P(\phi_k)}.
+\end{equation}
+A good CV should have high mutual information with the true slow 
+modes.  In practice---where the ``true'' slow coordinates are unknown---
+mutual information can be estimated between pairs of candidate CVs 
+or between CVs and experimental observables, and used for 
+\emph{feature selection} prior to enhanced sampling.
+
+\subsection{Transfer entropy}
+
+Transfer entropy~\citep{Schreiber2000} is an asymmetric, 
+information-theoretic measure of \emph{directed} influence:
+\begin{equation}
+  T_{Y\to X} = \sum P(x_{t+\tau},x_{t},y_{t})\ln
+    \frac{P(x_{t+\tau}\mid x_{t},y_{t})}{P(x_{t+\tau}\mid x_{t})}.
+\end{equation}
+In the CV quality context, a large transfer entropy from a candidate 
+CV to a known structural marker indicates that the CV genuinely 
+\emph{drives} the structural change---it is causal, not merely 
+correlated.
+
+\subsection{Dimensionality and redundancy}
+
+Information theory also provides metrics for redundancy among CVs.  
+Given a set $\{s_1,\ldots,s_n\}$, the joint mutual information 
+$I(\{s_i\};\phi_k)$ should increase sub-additively; CVs with high 
+pairwise redundancy (high $I(s_i;s_j)$) can be pruned without loss.  
+This principle underpins feature-selection methods used before TICA 
+or VAMP analysis.
+
+%%==================================================================
+\section{Machine-Learning Frameworks Incorporating Quality Metrics}
+\label{sec:ml}
+%%==================================================================
+
+\subsection{RAVE: Reweighted Autoencoded Variational Bayes}
+
+RAVE~\citep{Tiwary2018RAVE} trains a variational autoencoder (VAE) 
+on biased trajectory data, with an iterative protocol:
+\begin{enumerate}[noitemsep]
+  \item Run a short biased simulation.
+  \item Train the VAE to reconstruct configurations and minimise the 
+        KL divergence of the latent space.
+  \item The low-dimensional latent variable becomes the new CV.
+  \item Reweight trajectory data to remove the bias before 
+        the next training step.
+\end{enumerate}
+Quality is assessed implicitly by the VAE reconstruction error and 
+explicitly by running KS tests on extracted transition times.
+
+\subsection{Deep Locally Non-linear Embedding (DeepLNE)}
+
+DeepLNE~\citep{DeepLNE2024} constructs path-like CVs by combining a 
+differentiable autoencoder with a $k$-nearest-neighbour graph:
+\begin{equation}
+  s(\mathbf{x}) = \frac{\sum_k w_k \lambda_k}{\sum_k w_k},
+\end{equation}
+where $\lambda_k$ are progress-along-path parameters derived from 
+locally linear projections.  Quality is assessed by comparing the 
+reconstructed free energy profile with reference calculations and by 
+measuring how closely the CV tracks true transition pathways 
+in benchmark systems (RNA tetraloop, alanine dipeptide).
+
+\subsection{mlcolvar: A Unified Framework}
+
+The \texttt{mlcolvar} library~\citep{Bonati2023mlcolvar} 
+(available at \url{https://mlcolvar.readthedocs.io}) provides a 
+modular, PLUMED-compatible Python framework implementing:
+\begin{itemize}[noitemsep]
+  \item Linear and non-linear dimensionality reduction 
+        (PCA, autoencoders).
+  \item Supervised CVs (DeepLDA, deep discriminant analysis).
+  \item Dynamical CVs (Deep-TICA).
+  \item Committor learning.
+\end{itemize}
+Quality assessment is built into the workflow via 
+cross-validation, loss curves, and diagnostic notebooks, making it 
+practical to compare CV architectures on equal footing.
+
+\subsection{Uncertainty-based CVs}
+
+\citet{Zaverkin2025UncertCV} propose using the \emph{prediction 
+uncertainty} of a machine-learning potential as a CV for enhanced 
+sampling.  The quality of this approach is assessed by whether new 
+chemically relevant configurations discovered under the bias reduce 
+model uncertainty, providing a self-consistent quality criterion 
+that is particularly useful for building robust ML potential datasets.
+
+%%==================================================================
+\section{Comparative Summary and Practical Recommendations}
+\label{sec:summary}
+%%==================================================================
+
+Table~\ref{tab:summary} summarises the principal metrics reviewed 
+in this report, along with their key characteristics.
+
+\begin{longtable}{@{}p{3.2cm}p{3.0cm}p{3.0cm}p{3.2cm}@{}}
+\toprule
+\textbf{Method / Metric} & \textbf{Category} & 
+\textbf{Key quantity} & \textbf{Computational cost} \\
+\midrule
+\endfirsthead
+\multicolumn{4}{c}{\small\itshape (continued from previous page)}\\
+\toprule
+\textbf{Method / Metric} & \textbf{Category} & 
+\textbf{Key quantity} & \textbf{Computational cost} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{4}{r}{\small\itshape (continues on next page)}\\
+\endfoot
+\bottomrule
+\endlastfoot
+
+Committor histogram test & 
+Mechanistic (gold standard) & 
+Distribution of $\hat{q}$ at TS & 
+High (many short trajectories) \\[3pt]
+
+Infrequent metadynamics KS test & 
+Kinetic & 
+$P(t_i)$ vs.\ Poisson & 
+Moderate--high \\[3pt]
+
+SGOOP spectral gap & 
+Kinetic & 
+$\Delta\lambda = \lambda_1-\lambda_2$ & 
+Low (post-processing) \\[3pt]
+
+MSM implied timescales & 
+Kinetic & 
+$t_k(\tau)$ plateau & 
+Moderate \\[3pt]
+
+Autocorrelation / 
+$\tau_{\mathrm{int}}$ & 
+Time-correlation & 
+$C_s(\tau)$, $\tau_{\mathrm{int}}$ & 
+Low (from MD traj.) \\[3pt]
+
+TICA eigenvalue $\mu_k$ & 
+Time-correlation & 
+$t_k = -\tau/\ln|\mu_k|$ & 
+Low--moderate \\[3pt]
+
+VAMP-2 score & 
+Variational & 
+$\mathcal{V}_2(\mathbf{f})$ & 
+Low (from data) \\[3pt]
+
+FES convergence / block analysis & 
+Thermodynamic & 
+$\varepsilon(t)$ & 
+Low (post-processing) \\[3pt]
+
+Mean Force Integration & 
+Thermodynamic & 
+Variance of $\langle f(s)\rangle$ & 
+Low--moderate \\[3pt]
+
+Mutual information & 
+Information-theoretic & 
+$I(s;\phi_k)$ & 
+Low--moderate \\[3pt]
+
+Transfer entropy & 
+Information-theoretic & 
+$T_{Y\to X}$ & 
+Moderate \\[3pt]
+
+Committor-regularised ML & 
+Mechanistic + ML & 
+Committor loss term & 
+Moderate (training) \\[3pt]
+
+VAE / RAVE reconstruction & 
+ML generative & 
+Reconstruction error, KS test & 
+Moderate (training + sim.) \\[3pt]
+
+\end{longtable}
+\captionof{table}{Comparative summary of CV quality metrics.}
+\label{tab:summary}
+
+\subsection{Are kinetic or time-correlation methods more common?}
+
+Both families are widely used, but for different purposes:
+
+\begin{itemize}[noitemsep]
+  \item \textbf{Time-correlation methods} (TICA, VAMP score, Deep-TICA, 
+        autocorrelation analysis) dominate as \emph{training objectives} 
+        and \emph{offline selection criteria}, because they are 
+        computationally cheap and can be evaluated from existing 
+        trajectory data without additional simulations.
+
+  \item \textbf{Kinetic methods} (infrequent metadynamics KS test, 
+        SGOOP spectral gap, MSM implied timescales) are used as 
+        \emph{validation checks} after an enhanced-sampling run, 
+        providing a rigorous---if more costly---verification that 
+        the extracted rates are physically meaningful.
+\end{itemize}
+
+In practice, the recommended workflow is:
+\begin{enumerate}[noitemsep]
+  \item Use TICA / VAMP score / Deep-TICA to select or train the CV.
+  \item Validate with SGOOP spectral gap (low cost) and FES 
+        convergence analysis.
+  \item If kinetics are required, apply infrequent metadynamics with 
+        the KS test.
+  \item If a mechanistic interpretation is needed, perform committor 
+        analysis on a subset of configurations at the transition state.
+\end{enumerate}
+
+\subsection{Special considerations for neural-network CVs}
+
+When the CV is a neural network trained on sampling data (e.g.\ with 
+RAVE, Deep-TICA, or mlcolvar), additional care is required:
+
+\begin{enumerate}[noitemsep]
+  \item \textbf{Cross-validation}: Split trajectory data into 
+        training and test sets; monitor VAMP score or reconstruction 
+        error on the test set to detect overfitting.
+  \item \textbf{Reweighting}: When training on biased data, apply 
+        appropriate reweighting (e.g.\ MBAR or metadynamics 
+        reweighting) before computing TICA or VAMP scores.
+  \item \textbf{Committor regularisation}: Penalise deviations from 
+        committor behaviour during training to ensure the learned CV 
+        reflects genuine transition state structure.
+  \item \textbf{Explainability}: Use SHAP values or similar 
+        tools to identify which input features the network focuses 
+        on---this provides a sanity check on physical relevance.
+\end{enumerate}
+
+%%==================================================================
+\section{Conclusions}
+%%==================================================================
+
+The assessment of CV quality in enhanced sampling simulations has 
+matured considerably over the past decade.  The field now offers a 
+rich toolkit spanning four complementary paradigms: 
+(i)~kinetic assessment via spectral gap and barrier-crossing rates; 
+(ii)~time-correlation analysis via TICA, Deep-TICA, and autocorrelation 
+functions; (iii)~variational optimisation via VAMP scores and VAMPnets; 
+and (iv)~mechanistic validation via the committor function.  
+Information-theoretic measures (mutual information, transfer entropy) 
+provide additional layer of validation, particularly for feature 
+selection in high-dimensional systems.
+
+Machine-learning frameworks such as RAVE, Deep-TICA, and mlcolvar 
+incorporate these quality metrics directly into their training 
+objectives, effectively automating CV optimisation and validation. 
+The committor function remains the theoretical gold standard, and 
+recent committor-regularised training strategies are beginning to 
+make this standard practically achievable even for complex 
+biomolecular systems.
+
+For practitioners working with neural-network-learned CVs in 
+metadynamics, the recommended minimum validation suite consists of: 
+the VAMP-2 score (or Deep-TICA eigenvalue), the infrequent metadynamics 
+KS test, and a spot-check committor histogram on configurations 
+near the putative transition state.
+
+%%==================================================================
+%% References
+%%==================================================================
+\newpage
+\begin{thebibliography}{99}
+
+\bibitem[Laio and Parrinello(2002)]{Laio2002}
+Laio, A.; Parrinello, M.
+\newblock Escaping free-energy minima.
+\newblock \emph{Proc.\ Natl.\ Acad.\ Sci.\ USA} \textbf{2002}, \emph{99}, 12562--12566.
+\newblock \url{https://doi.org/10.1073/pnas.202427399}
+
+\bibitem[Barducci et al.(2008)]{Barducci2008}
+Barducci, A.; Bussi, G.; Parrinello, M.
+\newblock Well-tempered metadynamics: A smoothly converging and tunable free-energy method.
+\newblock \emph{Phys.\ Rev.\ Lett.} \textbf{2008}, \emph{100}, 020603.
+\newblock \url{https://doi.org/10.1103/PhysRevLett.100.020603}
+
+\bibitem[E and Vanden-Eijnden(2004)]{EWainanBerkovitz2004}
+E, W.; Vanden-Eijnden, E.
+\newblock Metastability, conformation dynamics, and transition pathways in complex systems.
+\newblock In \emph{Multiscale Modelling and Simulation}, Springer, 2004; pp.~35--68.
+
+\bibitem[Du et al.(1998)]{Du1998}
+Du, R.; Pande, V.S.; Grosberg, A.Y.; Tanaka, T.; Shakhnovich, E.S.
+\newblock On the transition coordinate for protein folding.
+\newblock \emph{J.\ Chem.\ Phys.} \textbf{1998}, \emph{108}, 334--350.
+\newblock \url{https://doi.org/10.1063/1.475393}
+
+\bibitem[Geissler et al.(1999)]{Geissler1999}
+Geissler, P.L.; Dellago, C.; Chandler, D.
+\newblock Kinetic pathways of ion pair dissociation in water.
+\newblock \emph{J.\ Phys.\ Chem.\ B} \textbf{1999}, \emph{103}, 3706--3710.
+\newblock \url{https://doi.org/10.1021/jp984837g}
+
+\bibitem[Tiwary and Berne(2016)]{Tiwary2016SGOOP}
+Tiwary, P.; Berne, B.J.
+\newblock Spectral gap optimization of order parameters for sampling complex molecular systems.
+\newblock \emph{Proc.\ Natl.\ Acad.\ Sci.\ USA} \textbf{2016}, \emph{113}, 2839--2844.
+\newblock \url{https://doi.org/10.1073/pnas.1600917113}
+
+\bibitem[Smith et al.(2018)]{Smith2018SGOOP}
+Smith, Z.; Pramanik, D.; Tsai, S.T.; Tiwary, P.
+\newblock Multi-dimensional spectral gap optimization of order parameters (SGOOP) through conditional probability factorization.
+\newblock \emph{J.\ Chem.\ Phys.} \textbf{2018}, \emph{149}, 234105.
+\newblock \url{https://doi.org/10.1063/1.5064856}
+
+\bibitem[Tiwary and Parrinello(2015)]{Tiwary2015IM}
+Tiwary, P.; Parrinello, M.
+\newblock From metadynamics to dynamics.
+\newblock \emph{Phys.\ Rev.\ Lett.} \textbf{2013}, \emph{111}, 230602.
+\newblock \url{https://doi.org/10.1103/PhysRevLett.111.230602}
+
+\bibitem[Jaynes(1980)]{Jaynes1980}
+Jaynes, E.T.
+\newblock The minimum entropy production principle.
+\newblock \emph{Annu.\ Rev.\ Phys.\ Chem.} \textbf{1980}, \emph{31}, 579--601.
+
+\bibitem[Pande et al.(2010)]{Pande2010}
+Pande, V.S.; Beauchamp, K.; Bowman, G.R.
+\newblock Everything you wanted to know about Markov State Models but were afraid to ask.
+\newblock \emph{Methods} \textbf{2010}, \emph{52}, 99--105.
+\newblock \url{https://doi.org/10.1016/j.ymeth.2010.06.002}
+
+\bibitem[Molgedey and Schuster(1994)]{Molgedey1994}
+Molgedey, L.; Schuster, H.G.
+\newblock Separation of a mixture of independent signals using time delayed correlations.
+\newblock \emph{Phys.\ Rev.\ Lett.} \textbf{1994}, \emph{72}, 3634--3637.
+
+\bibitem[P\'{e}rez-Hern\'{a}ndez et al.(2013)]{Perez2013TICA}
+P\'{e}rez-Hern\'{a}ndez, G.; Paul, F.; Giorgino, T.; De Fabritiis, G.; No\'{e}, F.
+\newblock Identification of slow molecular order parameters for Markov model construction.
+\newblock \emph{J.\ Chem.\ Phys.} \textbf{2013}, \emph{139}, 015102.
+\newblock \url{https://doi.org/10.1063/1.4811489}
+
+\bibitem[Smith et al.(2024)]{Smith2024tICAMeta}
+Smith, Z. et al.
+\newblock tICA-metadynamics for identifying slow dynamics in membrane permeation.
+\newblock \emph{J.\ Chem.\ Theory Comput.} \textbf{2024}.
+\newblock \url{https://pmc.ncbi.nlm.nih.gov/articles/PMC11282584/}
+
+\bibitem[Bonati et al.(2021)]{DeepTICA2021}
+Bonati, L.; Piccini, G.; Parrinello, M.
+\newblock Deep learning the slow modes for rare events sampling.
+\newblock \emph{Proc.\ Natl.\ Acad.\ Sci.\ USA} \textbf{2021}, \emph{118}, e2113533118.
+\newblock \url{https://doi.org/10.1073/pnas.2113533118}
+
+\bibitem[Wu and No\'{e}(2020)]{Wu2020VAMP}
+Wu, H.; No\'{e}, F.
+\newblock Variational approach for learning Markov processes from time series data.
+\newblock \emph{J.\ Nonlinear Sci.} \textbf{2020}, \emph{30}, 23--66.
+\newblock \url{https://doi.org/10.1007/s00332-019-09567-y}
+
+\bibitem[Mardt et al.(2018)]{Mardt2018VAMPnets}
+Mardt, A.; Pasquali, L.; Wu, H.; No\'{e}, F.
+\newblock VAMPnets for deep learning of molecular kinetics.
+\newblock \emph{Nat.\ Commun.} \textbf{2018}, \emph{9}, 5.
+\newblock \url{https://doi.org/10.1038/s41467-017-02388-1}
+
+\bibitem[Huang et al.(2023)]{GraphVAMPnets2023}
+Huang, X. et al.
+\newblock GraphVAMPnets for uncovering slow collective variables of self-assembly dynamics.
+\newblock \emph{J.\ Chem.\ Phys.} \textbf{2023}, \emph{159}, 094901.
+\newblock \url{https://doi.org/10.1063/5.0158903}
+
+\bibitem[Hempel et al.(2022)]{Hempel2022IMD}
+Hempel, T. et al.
+\newblock Deep learning to decompose macromolecules into independent Markovian domains.
+\newblock \emph{Nat.\ Commun.} \textbf{2022}, \emph{13}, 7101.
+\newblock \url{https://pmc.ncbi.nlm.nih.gov/articles/PMC9675806/}
+
+\bibitem[Bjola et al.(2024)]{Bjola2024MFI}
+Bjola, M. et al.
+\newblock Estimating free-energy surfaces and their convergence from multiple biased simulations.
+\newblock \emph{J.\ Chem.\ Theory Comput.} \textbf{2024}.
+\newblock \url{https://doi.org/10.1021/acs.jctc.4c00091}
+
+\bibitem[M\"{u}llender et al.(2024)]{Muller2024EffCVs}
+M\"{u}llender, A. et al.
+\newblock Effective data-driven collective variables for free energy calculations from metadynamics of paths.
+\newblock \emph{PNAS Nexus} \textbf{2024}, \emph{3}, pgae159.
+\newblock \url{https://doi.org/10.1093/pnasnexus/pgae159}
+
+\bibitem[Schreiber(2000)]{Schreiber2000}
+Schreiber, T.
+\newblock Measuring information transfer.
+\newblock \emph{Phys.\ Rev.\ Lett.} \textbf{2000}, \emph{85}, 461--464.
+\newblock \url{https://doi.org/10.1103/PhysRevLett.85.461}
+
+\bibitem[Tiwary and Berne(2018)]{Tiwary2018RAVE}
+Tiwary, P.; Berne, B.J.
+\newblock Predicting reaction coordinates in energy landscapes with diffuse metastable states.
+\newblock \emph{Proc.\ Natl.\ Acad.\ Sci.\ USA} \textbf{2016}; 
+\newblock See also: Sultan, M.M.; Wayment-Steele, H.K.; Pande, V.S.
+\newblock Transferable neural networks for enhanced sampling of protein dynamics.
+\newblock \emph{J.\ Chem.\ Theory Comput.} \textbf{2018}, \emph{14}, 1887--1894.
+
+\bibitem[Chen and Tiwary(2024)]{DeepLNE2024}
+Chen, M.; Tiwary, P.
+\newblock Deep learning path-like collective variable for enhanced sampling.
+\newblock \emph{J.\ Chem.\ Phys.} \textbf{2024}, \emph{160}, 174109.
+\newblock \url{https://doi.org/10.1063/5.0202156}
+
+\bibitem[Bonati et al.(2023)]{Bonati2023mlcolvar}
+Bonati, L. et al.
+\newblock A unified framework for machine learning collective variables for enhanced sampling.
+\newblock \emph{J.\ Chem.\ Phys.} \textbf{2023}, \emph{159}, 014801.
+\newblock \url{https://doi.org/10.1063/5.0156343}
+
+\bibitem[Zaverkin et al.(2025)]{Zaverkin2025UncertCV}
+Zaverkin, V. et al.
+\newblock Enhanced sampling of robust molecular datasets with uncertainty-based collective variables.
+\newblock \emph{J.\ Chem.\ Phys.} \textbf{2025}, \emph{162}, 034114.
+\newblock \url{https://doi.org/10.1063/5.0238961}
+
+\bibitem[Li et al.(2024)]{Li2024CCVSM}
+Li, C. et al.
+\newblock Committor-consistent variational string method.
+\newblock \emph{J.\ Chem.\ Theory Comput.} \textbf{2024}.
+\newblock \url{https://pmc.ncbi.nlm.nih.gov/articles/PMC11404425/}
+
+\bibitem[Bonati et al.(2025)]{Bonati2025CommittorReg}
+Bonati, L. et al.
+\newblock Committor-regularized learning of differentiable collective variables.
+\newblock \emph{J.\ Chem.\ Phys.} \textbf{2025}, \emph{164}, 104115.
+\newblock \url{https://doi.org/10.1063/5.0252656}
+
+\bibitem[Kang and Vanden-Eijnden(2024)]{Kang2024}
+Kang, X.; Vanden-Eijnden, E.
+\newblock Computing the committor with the committor to study the transition state.
+\newblock \emph{Nat.\ Comput.\ Sci.} \textbf{2024}.
+\newblock \url{https://zenodo.org/records/11164167}
+
+\bibitem[Committor Flow(2025)]{CommittorFlow2025}
+Authors, A. et al.
+\newblock Following the committor flow: A data-driven discovery of transition mechanisms.
+\newblock \emph{arXiv} \textbf{2025}, 2507.21961.
+\newblock \url{https://arxiv.org/abs/2507.21961}
+
+\bibitem[Slow Modes(2025)]{SlowModes2025}
+Authors, B. et al.
+\newblock Data efficient learning of molecular slow modes from nonequilibrium simulations.
+\newblock \emph{ChemRxiv} \textbf{2025}.
+\newblock \url{https://chemrxiv.org/doi/10.26434/chemrxiv-2025-vswkj}
+
+\end{thebibliography}
+
+\end{document}

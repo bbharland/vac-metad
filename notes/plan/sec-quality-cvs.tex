@@ -1,0 +1,50 @@
+\section{Assessing quality of CVs}
+Anything coming off an SRV will have
+\[
+    \myE{\psi_i} = 0 \quad \myE{\psi^2_i} = 1 \quad \psi_i=\sum_j a_{ij}\zeta_j
+\]
+Work out what this means for when you evaluate the quality of $\psi_i$ when evaluated using ACF.  Will have to validate using full unbiased dataset.
+
+Contemplate the meaning of
+\[
+    \tau_i \Leftarrow \myE{\psi_i(t+\tau)\psi_i(t)}
+\]
+and take care about the denominator in the usual ACF.
+
+\subsection{Advances in KDEs and related methods}
+From ChatGPT
+\begin{enumeratec}
+    \item Adaptive bandwidth.  Abramson (1982)
+    \[
+        \sigma_i \propto\frac{1}{\sqrt{p(x_i)}}
+    \]
+    Regions that are highly sampled get fine structure.  Silverman (1986) gives low bandwidth will increasing effective sample size.  Generally, bandwidth starts large and gets small.
+    \item Anisotropy.  Terrell and Scott (1992).  Boter et al (2010).  Chacon and Duong (2018).
+    \item kNN-based.  Choose $\sigma_i$ based on nearest neighbour.
+    \item GMM.  NOT KDE.  Karplus, 2009
+
+    See https://pubmed.ncbi.nlm.nih.gov/19284746
+    \item Gaussian processes for FES.  Mones, 2016.  ``Exploration, Sampling, And Reconstruction of Free Energy Surfaces with Gaussian Process Regression''
+    \item Normalizing flows.  Noe, 2019.  Not a priority for my 2D FES: stuggles with well-separated peaks, overkill for 2D, we lack a priori knowledge of $F(s)$ (Noe leverages Boltzmann factor).
+\end{enumeratec}
+
+\subsection{TODO}
+\begin{itemize}
+    \item review Noe 2019 and look into whether it has a place with a low-dimensional (2D) FES compared to the PES he uses.  I think he leverages
+    \[
+        p(x) \sim \mye^{-\beta V(x)}
+    \]
+    to learn the transformation to a $z$ variable that is $3N$ (high) dimensional but with simple structure/shape.  We are trying to learn an FES, so we can similarly leverage knowlege of $F(s)$.
+\end{itemize}
+
+\section{Search}
+\begin{itemizec}
+    \item "2D kernel density estimation" astronomy large dataset
+    \item "adaptive kernel density estimation" sharp peaks 2D
+    \item "bivariate density estimation" cross-validation bandwidth
+    \item "least squares cross validation" kernel density estimation 2D
+    \item "spatial hotspot" kernel density estimation bandwidth
+    \item "home range estimation" kernel density estimation LSCV
+    \item "bivariate KDE" multimodal density estimation
+    \item "density estimation" "sharp peaks" "2D"
+\end{itemizec}

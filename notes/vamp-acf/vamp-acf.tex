@@ -1,0 +1,628 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{bm}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=black,citecolor=black,urlcolor=blue}
+
+% --- light theorem styling ---
+\theoremstyle{plain}
+\newtheorem{proposition}{Proposition}
+\newtheorem{lemma}{Lemma}
+\theoremstyle{definition}
+\newtheorem{remark}{Remark}
+
+% --- macros ---
+\newcommand{\Kop}{\mathcal{K}}
+\newcommand{\Lop}{\mathcal{L}}
+\newcommand{\Top}{\mathcal{T}}
+\newcommand{\inner}[2]{\left\langle #1 , #2 \right\rangle_{\mu}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\dd}{\,\mathrm{d}}
+\newcommand{\Cmat}{\mathbf{C}}
+\newcommand{\eps}{\varepsilon}
+\DeclareMathOperator{\Var}{Var}
+\DeclareMathOperator{\Cov}{Cov}
+\DeclareMathOperator{\Tr}{Tr}
+
+\title{\bf Autocorrelation Functions, Implied Timescales, and the VAMP--2 Score:\\
+the canonical relations behind CV quality metrics}
+\author{}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This note works out, from first principles, the chain of identities that links the
+\emph{autocorrelation decay time} of a collective variable (CV) to the
+\emph{eigenvalues of the transfer (Koopman) operator} estimated in the variational
+approach to conformational dynamics (VAC), and finally to the \emph{VAMP--2 score}
+used to rank CVs. The central object is the spectral decomposition of the
+time-lagged correlation function. Reading it in one direction gives a sum of
+exponentials whose rates are the relaxation rates of the system; reading it in the
+other direction shows that the VAC generalized-eigenvalue problem and the VAMP--2
+Frobenius score are functionals of exactly the same eigenvalues
+$\lambda_i(\tau)=e^{-\tau/t_i}$. The 2D neural-network CV case is treated explicitly
+at the end.
+\end{abstract}
+
+\tableofcontents
+
+\section{Setup: dynamics, propagators, and reversibility}
+
+Let $x_t\in\Omega$ be a stationary, ergodic Markov process modeling the molecular
+dynamics, with unique stationary (Boltzmann) density
+\begin{equation}
+\mu(x)\;=\;Z^{-1}\,e^{-\beta V(x)},\qquad
+Z=\int_\Omega e^{-\beta V(x)}\dd x ,\qquad \beta=(k_BT)^{-1}.
+\end{equation}
+We work in the Hilbert space $L^2_\mu(\Omega)$ of square-integrable observables with
+the $\mu$-weighted inner product
+\begin{equation}
+\inner{f}{g}=\int_\Omega f(x)\,g(x)\,\mu(x)\dd x
+\;=\;\E_{\mu}\!\big[f(x)\,g(x)\big].
+\end{equation}
+
+\paragraph{Koopman / transfer operator.}
+For lag time $\tau>0$ define the \emph{Koopman operator} (propagator of observables)
+\begin{equation}
+[\Kop(\tau)f](x)\;=\;\E\!\big[f(x_{t+\tau})\,\big|\,x_t=x\big]
+\;=\;\int_\Omega p_\tau(y\mid x)\,f(y)\dd y ,
+\label{eq:koopman}
+\end{equation}
+where $p_\tau(y\mid x)$ is the transition density. Its $\mu$-adjoint is the
+\emph{transfer operator} $\Top(\tau)$ that propagates densities. Because the chain
+is a Markov process, the family $\{\Kop(\tau)\}_{\tau\ge0}$ is a semigroup,
+\begin{equation}
+\Kop(\tau_1)\,\Kop(\tau_2)=\Kop(\tau_1+\tau_2),
+\qquad \Kop(\tau)=e^{\tau\Lop},
+\label{eq:semigroup}
+\end{equation}
+with infinitesimal generator $\Lop$ (the backward Kolmogorov / Fokker--Planck
+generator). Equation~\eqref{eq:semigroup} is the single property responsible for the
+exponential decay laws derived below.
+
+\paragraph{Reversibility.}
+Equilibrium MD obeys detailed balance,
+$\mu(x)\,p_\tau(y\mid x)=\mu(y)\,p_\tau(x\mid y)$, which makes $\Kop(\tau)$
+\emph{self-adjoint} on $L^2_\mu$:
+\begin{equation}
+\inner{f}{\Kop(\tau)g}=\inner{\Kop(\tau)f}{g}.
+\end{equation}
+Self-adjointness guarantees a real spectrum and an orthonormal eigenbasis, which we
+now use. (The non-reversible generalization is deferred to
+Section~\ref{sec:vamp}.)
+
+\section{Spectral decomposition and implied timescales}
+
+Assume $\Kop(\tau)$ has a discrete spectrum with eigenpairs $\{\lambda_i(\tau),
+\phi_i\}_{i\ge0}$,
+\begin{equation}
+\Kop(\tau)\,\phi_i=\lambda_i(\tau)\,\phi_i ,
+\qquad \inner{\phi_i}{\phi_j}=\delta_{ij}.
+\end{equation}
+Stationarity forces a leading stationary mode
+\begin{equation}
+\phi_0\equiv 1,\qquad \lambda_0(\tau)=1\quad\forall\tau,
+\end{equation}
+and ergodicity makes it nondegenerate, so the remaining eigenvalues are strictly
+below one and ordered
+\begin{equation}
+1=\lambda_0>\lambda_1(\tau)\ge\lambda_2(\tau)\ge\cdots\ge 0 .
+\end{equation}
+
+\paragraph{From eigenvalues to timescales.}
+Apply the semigroup property~\eqref{eq:semigroup} to an eigenfunction:
+$\Kop(2\tau)\phi_i=\Kop(\tau)^2\phi_i=\lambda_i(\tau)^2\phi_i$, and more generally
+$\lambda_i(n\tau)=\lambda_i(\tau)^n$. The only continuous solution of this functional
+equation is exponential, so there exist rates $\kappa_i\ge0$ with
+\begin{equation}
+\boxed{\;\lambda_i(\tau)=e^{-\kappa_i\tau}=e^{-\tau/t_i}\;}
+\qquad
+t_i \equiv \kappa_i^{-1}=-\frac{\tau}{\ln\lambda_i(\tau)} .
+\label{eq:implied}
+\end{equation}
+The $t_i$ are the \emph{implied timescales} of VAC/MSM theory; $t_0=\infty$
+corresponds to the conserved stationary mode. Crucially, while the eigenvalue
+$\lambda_i(\tau)$ depends on the chosen lag $\tau$, the implied timescale $t_i$ is a
+$\tau$-independent property of the dynamics (in the limit where the slow processes
+are well separated and the estimate has converged). Equation~\eqref{eq:implied} is
+the first half of the bridge we are building.
+
+\section{Autocorrelation functions of collective variables}
+\label{sec:acf}
+
+Let $\psi\in L^2_\mu$ be a (scalar) collective variable. Without loss of generality
+take it mean-free and unit-variance under $\mu$,
+\begin{equation}
+\inner{\psi}{1}=\E_\mu[\psi]=0,\qquad \inner{\psi}{\psi}=\E_\mu[\psi^2]=1 .
+\end{equation}
+Its \emph{time-lagged autocorrelation function} (ACF) is
+\begin{equation}
+C(\tau)\;=\;\E\!\big[\psi(x_0)\,\psi(x_\tau)\big]
+\;=\;\inner{\psi}{\Kop(\tau)\psi},
+\label{eq:acf-def}
+\end{equation}
+where the second equality is just the definition of $\Kop$ in~\eqref{eq:koopman}
+together with stationarity.
+
+\paragraph{Spectral expansion.}
+Expand the CV in the eigenbasis, $\psi=\sum_{i\ge1}a_i\phi_i$ with overlaps
+$a_i=\inner{\psi}{\phi_i}$ (the $i=0$ term vanishes by mean-freeness). Then
+\begin{align}
+C(\tau)
+&=\Big\langle \textstyle\sum_i a_i\phi_i ,\ \Kop(\tau)\sum_j a_j\phi_j\Big\rangle_{\!\mu}
+=\sum_{i,j}a_i a_j\,\lambda_j(\tau)\,\underbrace{\inner{\phi_i}{\phi_j}}_{\delta_{ij}}
+\nonumber\\[2pt]
+&=\;\sum_{i\ge1} a_i^2\,\lambda_i(\tau)
+\;=\;\sum_{i\ge1} a_i^2\,e^{-\tau/t_i}.
+\label{eq:acf-spectral}
+\end{align}
+The normalization $\inner{\psi}{\psi}=\sum_i a_i^2=1$ gives $C(0)=1$, so $C(\tau)$ is
+already the normalized ACF. \emph{The autocorrelation of any CV is a convex mixture
+of pure exponentials, weighted by how strongly the CV projects onto each dynamical
+eigenmode.}
+
+\paragraph{The single-mode (ideal CV) limit.}
+If the CV is exactly an eigenfunction, $\psi=\phi_k$, then $a_i=\delta_{ik}$ and
+\begin{equation}
+C(\tau)=\lambda_k(\tau)=e^{-\tau/t_k}
+\label{eq:acf-pure}
+\end{equation}
+is a \emph{single} exponential. In that case the ACF decay time \emph{equals} the
+implied timescale and, by~\eqref{eq:implied}, fixes the eigenvalue at any lag. This
+is the precise sense in which ``a good CV'' is one whose autocorrelation decays
+slowly and mono-exponentially: it means the CV is aligned with a slow eigenfunction.
+
+\paragraph{Integrated autocorrelation time.}
+A lag-free summary of the decay is the integrated autocorrelation time,
+\begin{equation}
+\tau_{\mathrm{int}}=\int_0^\infty C(\tau)\dd\tau
+=\sum_{i\ge1}a_i^2\!\int_0^\infty e^{-\tau/t_i}\dd\tau
+=\sum_{i\ge1}a_i^2\,t_i ,
+\label{eq:tauint}
+\end{equation}
+i.e.\ the overlap-weighted mean of the implied timescales. For a pure mode
+$\tau_{\mathrm{int}}=t_k$. Equations~\eqref{eq:acf-spectral} and~\eqref{eq:tauint}
+already tell you that fitting a \emph{single} decay time to a CV whose ACF is
+genuinely multi-exponential returns a biased, overlap-weighted average rather than a
+true timescale --- the motivation for diagonalizing (next section) instead of
+fitting raw CV ACFs.
+
+\section{The variational principle (VAC) and the generalized eigenvalue problem}
+\label{sec:vac}
+
+\subsection{Rayleigh quotient and the variational bound}
+
+Define the lag-$\tau$ Rayleigh quotient of a trial CV $f$ (mean-free) as its
+normalized autocorrelation,
+\begin{equation}
+\hat\lambda(f;\tau)\;=\;\frac{\inner{f}{\Kop(\tau)f}}{\inner{f}{f}}
+\;=\;\frac{C_f(\tau)}{C_f(0)} .
+\end{equation}
+Because $\Kop(\tau)$ is self-adjoint with top nontrivial eigenvalue
+$\lambda_1(\tau)$, the Courant--Fischer principle gives the \emph{variational bound}
+of Noé \& Nüske,
+\begin{equation}
+\boxed{\;\hat\lambda(f;\tau)\;\le\;\lambda_1(\tau)\quad\text{for all mean-free }f,\;}
+\label{eq:varbound}
+\end{equation}
+with equality iff $f\propto\phi_1$. \emph{Equation~\eqref{eq:varbound} is the
+theoretical license for using ACF decay (equivalently, slowness) as an optimization
+target}: maximizing a CV's lag-$\tau$ autocorrelation drives it toward the slowest
+eigenfunction, and the achieved value is a certified lower bound on the true leading
+eigenvalue. A neural network that maps configurations to CVs and is trained to
+maximize slowness is performing exactly this variational maximization over a rich
+nonlinear function class.
+
+\subsection{Matrix form for a multidimensional CV}
+
+Let $\bm\psi=(\psi_1,\dots,\psi_m)^\top$ be an $m$-dimensional CV (for you, $m=2$:
+the two NN outputs). Form the \emph{instantaneous} and \emph{time-lagged}
+covariance matrices
+\begin{align}
+[\Cmat_{00}]_{ab}&=\inner{\psi_a}{\psi_b}=\E\!\big[\psi_a(x_0)\,\psi_b(x_0)\big],\\
+[\Cmat_{0\tau}]_{ab}&=\inner{\psi_a}{\Kop(\tau)\psi_b}=\E\!\big[\psi_a(x_0)\,\psi_b(x_\tau)\big].
+\end{align}
+For reversible dynamics one symmetrizes the (finite-sample) estimate,
+$\Cmat_{0\tau}\leftarrow\tfrac12(\Cmat_{0\tau}+\Cmat_{0\tau}^\top)$. The best
+$m$-dimensional reduction is obtained by solving the \emph{generalized eigenvalue
+problem} (GEVP)
+\begin{equation}
+\boxed{\;\Cmat_{0\tau}\,\bm v_i=\hat\lambda_i(\tau)\,\Cmat_{00}\,\bm v_i\;}
+\qquad i=1,\dots,m .
+\label{eq:gevp}
+\end{equation}
+The eigenvalues $\hat\lambda_i(\tau)$ are the variational (Ritz) estimates of the
+true $\lambda_i(\tau)$, and the eigenvectors define the optimal linear combinations
+\begin{equation}
+\xi_i=\sum_{a=1}^m v_{ia}\,\psi_a ,
+\end{equation}
+which are the best in-subspace approximations of the eigenfunctions $\phi_i$. These
+combinations are uncorrelated and \emph{diagonalize} the dynamics: by construction
+\begin{equation}
+\frac{\E[\xi_i(x_0)\,\xi_i(x_\tau)]}{\E[\xi_i(x_0)^2]}
+=\hat\lambda_i(\tau)=e^{-\tau/\hat t_i},
+\label{eq:diag-acf}
+\end{equation}
+so each \emph{diagonalized} mode $\xi_i$ has a mono-exponential ACF whose decay time
+is $\hat t_i=-\tau/\ln\hat\lambda_i(\tau)$. This is the operational version of
+\eqref{eq:acf-pure}: the GEVP ``unmixes'' the multi-exponential raw-CV ACFs of
+Section~\ref{sec:acf} into clean single-timescale modes. \emph{This is the precise
+link between your measured ACF decay times and the VAC eigenvalues.}
+
+\section{Empirical estimators from a trajectory}
+\label{sec:estimators}
+
+Given a discretized trajectory $x_0,x_{\Delta t},\dots,x_{(N-1)\Delta t}$ and a lag
+$\tau=s\,\Delta t$, the covariances are estimated by time averages (assuming
+ergodicity, replacing $\E_\mu$ by trajectory means). With $\bar{\bm\psi}$ the sample
+mean,
+\begin{align}
+\widehat{\Cmat}_{00}
+&=\frac{1}{N-s}\sum_{t=0}^{N-s-1}
+\big(\bm\psi_t-\bar{\bm\psi}\big)\big(\bm\psi_t-\bar{\bm\psi}\big)^\top, \\
+\widehat{\Cmat}_{0\tau}
+&=\frac{1}{N-s}\sum_{t=0}^{N-s-1}
+\big(\bm\psi_t-\bar{\bm\psi}\big)\big(\bm\psi_{t+s}-\bar{\bm\psi}\big)^\top,
+\end{align}
+where $\bm\psi_t\equiv\bm\psi(x_{t\Delta t})$. For a scalar CV the corresponding ACF
+estimator is the usual
+\begin{equation}
+\widehat C(\tau)=\frac{1}{(N-s)\,\widehat\sigma^2}
+\sum_{t=0}^{N-s-1}\big(\psi_t-\bar\psi\big)\big(\psi_{t+s}-\bar\psi\big),
+\qquad \widehat\sigma^2=\widehat{\Var}(\psi).
+\label{eq:acf-est}
+\end{equation}
+Two practical routes to a ``decay time'' then exist, and \eqref{eq:diag-acf} tells you
+when they agree:
+\begin{enumerate}[leftmargin=2em,itemsep=2pt]
+\item \textbf{Direct ACF fit.} Fit $\widehat C(\tau)$ of CV$_a$ to $e^{-\tau/t_a}$ or
+integrate it as in~\eqref{eq:tauint}. This is unbiased \emph{only} if CV$_a$ is
+already (close to) an eigenfunction; otherwise it returns the overlap-weighted
+average of \eqref{eq:tauint}.
+\item \textbf{GEVP eigenvalue.} Solve~\eqref{eq:gevp} and read
+$\hat t_i=-\tau/\ln\hat\lambda_i(\tau)$. This is the variationally optimal estimate
+and is the one that connects directly to the score below.
+\end{enumerate}
+Plotting $\hat t_i(\tau)$ versus $\tau$ and locating the plateau is the standard
+implied-timescale convergence test; the plateau value is the lag-independent $t_i$.
+
+\section{VAMP and the VAMP--2 score}
+\label{sec:vamp}
+
+\subsection{The non-reversible generalization}
+
+When the process is not assumed reversible (no detailed balance, or
+non-equilibrium/driven dynamics), $\Kop(\tau)$ need not be self-adjoint and may lack
+real eigenvalues. The Variational Approach for Markov Processes (VAMP) replaces the
+eigendecomposition by a \emph{singular value decomposition} of the
+\emph{whitened} (half-weighted) Koopman matrix. Using the instantaneous covariances
+at the two ends of the lag window, $\Cmat_{00}$ at time $0$ and $\Cmat_{\tau\tau}$ at
+time $\tau$, define
+\begin{equation}
+\bar{\mathbf K}(\tau)=\Cmat_{00}^{-1/2}\,\Cmat_{0\tau}\,\Cmat_{\tau\tau}^{-1/2},
+\qquad
+\bar{\mathbf K}=\mathbf U\,\bm\Sigma\,\mathbf V^\top,\quad
+\bm\Sigma=\mathrm{diag}(\sigma_0,\sigma_1,\dots),
+\label{eq:whitened}
+\end{equation}
+with singular values $1=\sigma_0\ge\sigma_1\ge\sigma_2\ge\cdots\ge0$. The whitening
+makes $\bar{\mathbf K}$ --- and hence every $\sigma_i$ --- \emph{invariant under any
+invertible linear recombination of the CVs}, which is exactly the property one wants
+of a CV-quality score: it grades the \emph{subspace} spanned by the CVs, not their
+arbitrary parameterization.
+
+\subsection{The score}
+
+The VAMP--$r$ score is the $\ell^r$ ``mass'' of the singular spectrum; the VAMP--2
+score is the squared Frobenius norm of the whitened propagator,
+\begin{equation}
+\boxed{\;
+\mathrm{VAMP\text{-}2}
+=\big\|\bar{\mathbf K}(\tau)\big\|_F^{2}
+=\Tr\!\big(\bar{\mathbf K}\bar{\mathbf K}^\top\big)
+=\sum_{i\ge0}\sigma_i^{2}
+=1+\sum_{i\ge1}\sigma_i^{2}.
+\;}
+\label{eq:vamp2}
+\end{equation}
+The separated ``$1$'' is the contribution of the trivial stationary process
+$\sigma_0=1$ (some software, e.g.\ \texttt{deeptime}/PyEMMA, reports it inside the sum,
+so an $m$-process model has maximal score $m{+}1$; other conventions drop it ---
+state which one you use). Each $\sigma_i^2$ is the \emph{kinetic variance} captured
+by mode $i$, so VAMP--2 is the cumulative kinetic content resolved by the CVs. It is
+precisely the objective maximized by VAMPnets when a neural network is trained to
+define CVs, which is why it is the natural quality metric for learned CVs.
+
+\subsection{Reduction to the reversible / eigenvalue picture}
+
+Under stationarity and reversibility the two end-point covariances coincide in
+expectation, $\Cmat_{\tau\tau}=\Cmat_{00}$, and the whitened matrix
+\eqref{eq:whitened} becomes \emph{symmetric}; its SVD coincides with its
+eigendecomposition. The singular values then equal the (nonnegative) Koopman
+eigenvalues,
+\begin{equation}
+\sigma_i=\lambda_i(\tau)\ge0 ,
+\end{equation}
+for the slow processes of interest. Substituting into~\eqref{eq:vamp2} and using the
+implied-timescale relation~\eqref{eq:implied},
+\begin{equation}
+\boxed{\;
+\mathrm{VAMP\text{-}2}
+=1+\sum_{i\ge1}\lambda_i^2(\tau)
+=1+\sum_{i\ge1}e^{-2\tau/t_i}.
+\;}
+\label{eq:vamp2-rev}
+\end{equation}
+This is the second half of the bridge: \emph{the VAMP--2 score is a strictly
+increasing function of every implied timescale} $t_i$ --- longer ACF decay times of
+the diagonalized modes push the score up.
+
+\section{Synthesis: from CV1, CV2 autocorrelations to the VAMP--2 score}
+
+Collect the pieces. For your 2D neural-network CV $\bm\psi=(\psi_1,\psi_2)$:
+
+\begin{enumerate}[leftmargin=2.2em,itemsep=3pt]
+\item \textbf{Diagonalize.} Estimate $\widehat{\Cmat}_{00},\widehat{\Cmat}_{0\tau}$
+from the trajectory (Section~\ref{sec:estimators}) and solve the $2\times2$
+GEVP~\eqref{eq:gevp}. This yields two uncorrelated modes $\xi_1,\xi_2$ (linear
+combinations of CV1 and CV2) with eigenvalues $\hat\lambda_1(\tau)\ge\hat\lambda_2(\tau)$.
+
+\item \textbf{Read decay times.} By~\eqref{eq:diag-acf} each $\xi_i$ has a
+mono-exponential ACF, so its measured decay time and the eigenvalue are two views of
+the same number,
+\begin{equation}
+\hat\lambda_i(\tau)=e^{-\tau/\hat t_i}
+\quad\Longleftrightarrow\quad
+\hat t_i=-\frac{\tau}{\ln\hat\lambda_i(\tau)} ,\qquad i=1,2 .
+\end{equation}
+(If instead you fit the \emph{raw} ACFs of $\psi_1,\psi_2$ directly, you recover the
+overlap-weighted averages of~\eqref{eq:tauint}, which coincide with $\hat t_1,\hat
+t_2$ only when CV1, CV2 are already nearly aligned with $\phi_1,\phi_2$ and mutually
+uncorrelated --- a useful diagnostic in its own right.)
+
+\item \textbf{Assemble the score.} In the reversible limit,
+\eqref{eq:vamp2-rev} with $m=2$ gives the closed form
+\begin{equation}
+\boxed{\;
+\mathrm{VAMP\text{-}2}
+=1+\hat\lambda_1^2(\tau)+\hat\lambda_2^2(\tau)
+=1+e^{-2\tau/\hat t_1}+e^{-2\tau/\hat t_2}.
+\;}
+\label{eq:final}
+\end{equation}
+\end{enumerate}
+
+Equation~\eqref{eq:final} is the explicit relationship you have been using: the
+VAMP--2 score of a 2D CV is fixed entirely by the two diagonalized ACF decay times at
+the chosen lag $\tau$. Differentiating,
+\begin{equation}
+\frac{\partial\,\mathrm{VAMP\text{-}2}}{\partial \hat t_i}
+=\frac{2\tau}{\hat t_i^{\,2}}\,e^{-2\tau/\hat t_i}>0 ,
+\end{equation}
+confirms monotonicity: a CV set whose slow modes decorrelate more slowly scores
+strictly higher. Two further structural facts make the score (rather than the bare
+timescales) the better metric:
+\begin{itemize}[leftmargin=1.6em,itemsep=2pt]
+\item \textbf{Invariance.} VAMP--2 depends only on the subspace
+$\mathrm{span}(\psi_1,\psi_2)$, not on how the network happens to scale or rotate its
+two outputs (Section~\ref{sec:vamp}); raw single-CV decay times are not invariant.
+\item \textbf{Variationality.} By~\eqref{eq:varbound} every $\hat\lambda_i\le\lambda_i$,
+so the empirical score is a lower bound on the true kinetic content; maximizing it
+(over network parameters, or over the lag) is variationally justified and cannot
+overshoot the true dynamics. Cross-validating the score over independent trajectory
+folds (the GMRQ idea) guards against the variational bound being inflated by
+overfitting.
+\end{itemize}
+
+\begin{remark}[Lag-time dependence]
+Both sides of~\eqref{eq:final} carry explicit $\tau$ dependence through
+$\hat\lambda_i(\tau)$, but if the two slow processes are well resolved the implied
+timescales $\hat t_i$ plateau and the \emph{ranking} of competing CV sets by VAMP--2
+becomes $\tau$-robust over the plateau region. Comparisons between CV sets should
+always be made at a common lag.
+\end{remark}
+
+\begin{remark}[Why mono-exponential matters]
+The entire bridge rests on the semigroup identity~\eqref{eq:semigroup}: it forces
+eigenmode ACFs to be \emph{exactly} single exponentials~\eqref{eq:acf-pure}, which is
+what lets a single decay time stand in for an eigenvalue. A CV whose ACF is
+stubbornly multi-exponential is, by~\eqref{eq:acf-spectral}, a mixture of dynamical
+modes --- a signal that the 2D CV is either entangling two processes or missing one,
+and that the GEVP diagonalization is doing nontrivial work.
+\end{remark}
+
+\section{Practical diagnostics: reading the ACF of one standardized CV}
+\label{sec:practical}
+
+Suppose you build a single putative CV $u(x)$ and standardize it over a long
+unbiased trajectory so that
+\begin{equation}
+\E_\mu[u]=0,\qquad \E_\mu[u^2]=1 ,
+\label{eq:standardize}
+\end{equation}
+then estimate $\widehat C(\tau)$ with the trajectory estimator~\eqref{eq:acf-est}
+and plot it out to $\tau_{\max}=10$~ns. Two questions arise: what \emph{should} the
+curve look like if $u$ is the leading nontrivial eigenfunction $\phi_1$, and how do
+you put a number on its ``single-exponential-ness''?
+
+\subsection{The idealized expectation}
+
+The standardization in~\eqref{eq:standardize} removes the two trivial sources of
+non-ideality before you begin. Zero mean annihilates any projection onto the
+stationary mode $\phi_0\equiv1$ (no constant baseline), and unit variance pins
+$\widehat C(0)=1$, so the single-exponential model $C(\tau)=e^{-\tau/t_1}$ carries
+\emph{no free amplitude} --- only the rate $1/t_1$ is unknown. If $u=\phi_1$
+\emph{exactly}, then by the semigroup property~\eqref{eq:semigroup} $\phi_1$ is an
+eigenfunction of $\Kop(\tau)$ at \emph{every} lag with eigenvalue $e^{-\tau/t_1}$, and
+\eqref{eq:acf-pure} gives
+\begin{equation}
+C(\tau)=e^{-\tau/t_1}\qquad\text{exactly, for all }\tau\ge0 ,
+\end{equation}
+with no short-time curvature, no second timescale, and no offset. \emph{In the
+population (infinite-sampling) limit I would indeed be very surprised to see anything
+but a clean single exponential}: a genuine, statistically resolved departure there
+is evidence that $u$ is \emph{not} truly $\phi_1$. The theory leaves no room for a
+``slightly multi-exponential'' eigenfunction.
+
+\subsection{Why the \emph{empirical} curve will deviate anyway}
+
+The estimator $\widehat C(\tau)$ is not the population ACF, and for a finite
+$10$~ns-deep curve it will depart from $e^{-\tau/t_1}$ even when $u=\phi_1$ exactly.
+\emph{These deviations I would fully expect}, and they must be told apart from a real
+defect of $u$:
+\begin{enumerate}[leftmargin=2em,itemsep=3pt]
+\item \textbf{Statistical noise that grows with lag.} The number of effectively
+independent samples in a run of length $T$ is only
+\begin{equation}
+N_{\mathrm{eff}}\approx \frac{T}{2\,\tau_{\mathrm{int}}}\approx\frac{T}{2\,t_1},
+\end{equation}
+and the sampling error of $\widehat C(\tau)$ scales like $N_{\mathrm{eff}}^{-1/2}$,
+worsening toward large $\tau$ where the signal has decayed into that floor (Bartlett's
+formula). The tail of a $10$~ns plot can be essentially noise.
+\item \textbf{Finite-window mean constraint $\Rightarrow$ a slight negative tail.}
+Standardizing on the same finite run forces the sampled fluctuations to sum to zero,
+which biases the estimator downward by $\mathcal O(\tau_{\mathrm{int}}/T)$ and
+typically drives $\widehat C(\tau)$ slightly \emph{below} zero at large lag. A true
+single exponential thus appears to decay marginally \emph{faster} than $e^{-\tau/t_1}$
+and may dip negative --- an estimator artifact, not a property of $u$.
+\item \textbf{Fast-mode contamination if $u$ is only \emph{approximately} $\phi_1$.}
+By the spectral expansion~\eqref{eq:acf-spectral}, any residual overlap onto faster
+modes adds genuine fast-decaying terms: a sharp initial drop over the first few steps
+followed by the slow exponential. \emph{This} deviation is real and diagnostic --- it
+is the signature you are actually hunting for.
+\item \textbf{Window vs.\ timescale mismatch.} If $t_1\gg10$~ns you only capture the
+initial, near-linear part of the decay and cannot distinguish one exponential from
+several; if $t_1\ll10$~ns most of the window is post-decay noise. The informative
+fitting region is roughly $\tau\in[0,\,3\text{--}4\,t_1]$.
+\end{enumerate}
+So the operative distinction is between \emph{statistical} deviations (a noisy tail, a
+small negative dip --- expected, harmless) and \emph{structural} deviations (a
+resolved second exponential lying outside the error bars --- meaning $u$ mixes
+dynamical modes and is not $\phi_1$).
+
+\subsection{Assessing ideality of fit}
+
+There is no single scalar that settles it; the robust practice is a small battery of
+mutually reinforcing checks, all of which require error bars.
+
+\paragraph{(a) Log-linear straightness.} Plot $\ln\widehat C(\tau)$ against $\tau$.
+A single exponential is an exact straight line of slope $-1/t_1$; systematic
+curvature (concave-up over the early lags) is the fingerprint of a second, faster
+timescale. This is the quickest visual screen.
+
+\paragraph{(b) Running relaxation-time plateau (the headline test).} Define the
+lag-resolved relaxation time
+\begin{equation}
+\theta(\tau)\;=\;-\frac{\tau}{\ln\widehat C(\tau)} ,
+\qquad\text{equivalently}\qquad
+\theta_{\mathrm{loc}}(\tau)=-\Big[\tfrac{\mathrm d}{\mathrm d\tau}\ln\widehat C(\tau)\Big]^{-1}.
+\end{equation}
+For a pure single exponential $\theta(\tau)\equiv t_1$ is \emph{flat} at every lag;
+drift or curvature in $\theta(\tau)$ exposes multi-exponential structure. This is
+exactly the implied-timescale plateau test of Section~\ref{sec:estimators} applied to
+one CV, and it is the cleanest ideality diagnostic because the eye is good at judging
+flatness.
+
+\paragraph{(c) Nested model selection.} Fit the single-exponential model against the
+two-exponential alternative
+\begin{equation}
+C_2(\tau)=a\,e^{-\tau/t_1}+(1-a)\,e^{-\tau/t_2},\qquad 0\le a\le1,\ t_2<t_1,
+\end{equation}
+and compare with AIC/BIC or a likelihood-ratio ($F$-) test. If the optimizer drives
+$a\to1$, or $t_2\to t_1$, or the information criterion prefers the simpler model, the
+single exponential is statistically adequate and $u\approx\phi_1$. \textbf{Caveat:}
+ACF values at neighboring lags are strongly correlated, so naive $R^2$ and
+$\chi^2$ \emph{overstate} significance; use the covariance of $\widehat C$ from a
+block bootstrap (or fit by generalized least squares) before trusting any $p$-value.
+
+\paragraph{(d) Internal consistency.} For a true single exponential four independent
+estimates of the same timescale must agree within error:
+\begin{equation}
+t_1 \;\overset{!}{=}\; \tau_{1/e}\quad(\text{lag where }\widehat C=e^{-1}\approx0.368)
+\;\overset{!}{=}\; \tau_{\mathrm{int}}=\!\int_0^{\tau^\star}\!\widehat C\,\mathrm d\tau
+\;\overset{!}{=}\; (\text{log-linear slope})^{-1}.
+\end{equation}
+Disagreement among them is a model-free flag of non-exponentiality. (Truncate the
+integral at the first noise crossing $\tau^\star$ to avoid integrating noise.)
+
+\paragraph{(e) Error bars are non-negotiable.} ``Deviation from a single
+exponential'' is meaningless without a noise scale. Obtain it by block averaging
+(Flyvbjerg--Petersen) or, better, from several independent trajectories, and only
+interpret features of $\widehat C(\tau)$ that exceed it. Restrict every fit above to
+the region where $\widehat C(\tau)$ stands clear of this floor.
+
+\medskip
+\noindent\textbf{Bottom line.} If $u$ is exactly $\phi_1$, theory guarantees an exact
+single exponential, so a clean structural departure would surprise me and would
+indict $u$. But a finite ACF plotted to $10$~ns will \emph{always} show a noisy,
+slightly sub-exponential tail; that is the estimator talking, not the CV. The
+diagnostics above are designed precisely to separate the two --- a flat
+$\theta(\tau)$ plateau within error bars, a straight log-linear plot, and a model
+selection that declines the second exponential together constitute strong evidence
+that $u$ is behaving as a genuine slowest eigenfunction.
+
+\section*{Notation summary}
+\addcontentsline{toc}{section}{Notation summary}
+\begin{center}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{ll}
+\hline
+$\mu(x)$ & stationary (Boltzmann) density\\
+$\inner{\cdot}{\cdot}$ & $\mu$-weighted $L^2$ inner product\\
+$\Kop(\tau)$ & Koopman operator at lag $\tau$; $\Kop(\tau)=e^{\tau\Lop}$\\
+$\phi_i,\ \lambda_i(\tau)$ & eigenfunctions / eigenvalues of $\Kop(\tau)$\\
+$t_i=-\tau/\ln\lambda_i$ & implied timescale (relaxation time) of process $i$\\
+$\psi_a,\ \bm\psi$ & collective variable(s) (the NN outputs)\\
+$C(\tau)$ & normalized time-lagged autocorrelation of a CV\\
+$\Cmat_{00},\Cmat_{0\tau},\Cmat_{\tau\tau}$ & instantaneous / time-lagged / lagged covariance matrices\\
+$\xi_i=\sum_a v_{ia}\psi_a$ & diagonalized (GEVP) modes\\
+$\sigma_i$ & singular values of the whitened propagator $\bar{\mathbf K}$\\
+$\mathrm{VAMP\text{-}2}=\sum_i\sigma_i^2$ & cumulative kinetic-variance score\\
+\hline
+\end{tabular}
+\end{center}
+
+\begin{thebibliography}{9}
+\bibitem{NoeNuske2013}
+F.~No\'e and F.~N\"uske,
+\emph{A variational approach to modeling slow processes in stochastic dynamical
+systems}, Multiscale Model.\ Simul.\ \textbf{11}, 635 (2013).
+
+\bibitem{Nuske2014}
+F.~N\"uske, B.~G.~Keller, G.~P\'erez-Hern\'andez, A.~S.~J.~S.~Mey, and F.~No\'e,
+\emph{Variational approach to molecular kinetics},
+J.\ Chem.\ Theory Comput.\ \textbf{10}, 1739 (2014).
+
+\bibitem{WuNoe2020}
+H.~Wu and F.~No\'e,
+\emph{Variational approach for learning Markov processes from time series data},
+J.\ Nonlinear Sci.\ \textbf{30}, 23 (2020).
+
+\bibitem{Mardt2018}
+A.~Mardt, L.~Pasquali, H.~Wu, and F.~No\'e,
+\emph{VAMPnets for deep learning of molecular kinetics},
+Nat.\ Commun.\ \textbf{9}, 5 (2018).
+
+\bibitem{McGibbon2015}
+R.~T.~McGibbon and V.~S.~Pande,
+\emph{Variational cross-validation of slow dynamical modes in molecular kinetics},
+J.\ Chem.\ Phys.\ \textbf{142}, 124105 (2015).
+
+\bibitem{FlyvbjergPetersen1989}
+H.~Flyvbjerg and H.~G.~Petersen,
+\emph{Error estimates on averages of correlated data},
+J.\ Chem.\ Phys.\ \textbf{91}, 461 (1989).
+
+\bibitem{Prinz2011}
+J.-H.~Prinz \emph{et al.},
+\emph{Markov models of molecular kinetics: Generation and validation},
+J.\ Chem.\ Phys.\ \textbf{134}, 174105 (2011).
+\end{thebibliography}
+
+\end{document}

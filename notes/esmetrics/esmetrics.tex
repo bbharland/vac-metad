@@ -1,0 +1,113 @@
+\documentclass[twocolumn]{notes}
+\usepackage{notes}
+
+\begin{document}
+\title{Metrics to evaluate enhanced sampling}
+\date{\today} % \formatdate{10}{11}{2022}
+\maketitle
+\tableofcontents
+\newpage
+
+See \texttt{plan.pdf} to see a good discussion of this.  Ultimately, just like the ACF is a ideal metric for CV quality, it is also a very good metric for implied timescale of the enhanced dynamics:
+\begin{enumeratec}
+    \item Separately from enhanced dynamics, find ideal CVs
+    \item Now, use these CVs to assess \emph{apparent} timescale (from autocorrelation) of a segment of simulation data.  The quantity of such data will be very poor, so statistical noise will be high.  But it gives some indication of a true boost factor.
+\end{enumeratec}
+
+
+% \appendix
+\end{document}
+
+
+
+%% \href{https://www.ferglab.com/}{\color{darkred}Website}
+
+% \usepackage{minted}
+% \begin{minted}[mathescape, linenos]{python}
+%     # Note: $\pi=\lim_{n\to\infty}\frac{P_n}{d}$
+%     title = "Hello World"
+% \end{minted}
+
+%%=======================================================================
+%%     PREFERRED FIGURE/TABLE
+%%=======================================================================
+%%                                 %%-------------------------------------%%
+%% \begin{figure}[h!]              %%  caption right of figure
+%%   \begin{minipage}[c]{0.67\textwidth}
+%%     \includegraphics[width=\textwidth]{imgfile.png}
+%%   \end{minipage}\hfill
+%%   \begin{minipage}[c]{0.3\textwidth}
+%%     \caption{Caption on the right hand side}
+%%     \label{fig:}
+%%   \end{minipage}
+%% \end{figure}
+%%                                 %%-------------------------------------%%
+%% \begin{figure}[h!]\centering    %%  caption below figure
+%%   \includegraphics[width=0.5\textwidth]{imgfile.png}
+%%   \caption{General caption}
+%%   \label{fig:label}
+%% \end{figure}
+%%                                 %%-------------------------------------%%
+%% \begin{figure}[!h]\centering    %%  array of figures with subcaptions
+%%   \subfloat[]{\includegraphics[width=0.5\textwidth]{}}
+%%   \subfloat[]{\includegraphics[width=0.5\textwidth]{}} \\
+%%   \subfloat[]{\includegraphics[width=0.5\textwidth]{}}
+%%   \subfloat[]{\includegraphics[width=0.5\textwidth]{}} \\
+%%   \subfloat[]{\includegraphics[width=0.5\textwidth]{}}
+%%   \subfloat[]{\includegraphics[width=0.5\textwidth]{}}
+%%   \caption{General caption}
+%%   \label{fig:label}
+%% \end{figure}
+%%                                        %%------------------------------%%
+%% \begin{table}[!h]\centering\ra{1.3}    %%  simple table
+%%   \begin{tabular}{@{}rrrr@{}}\toprule
+%%     & $t=0$ & $t=1$ & $t=2$ \\ \midrule
+%%     $c$ & 1 & 2 & 3 \\
+%%     $c$ & 1 & 2 & 3 \\
+%%     \bottomrule
+%%   \end{tabular}
+%%   \caption{Caption}
+%% \end{table}
+%%                                        %%------------------------------%%
+%% \begin{table}[!h]\centering\ra{1.3}    %%  complicated table
+%%   \begin{tabular}{@{}rrrrcrrr@{}}\toprule
+%%     & \multicolumn{3}{c}{$w = 8$} & \phantom{abc}&
+%%     \multicolumn{3}{c}{$w = 16$}\\
+%%     \cmidrule{2-4} \cmidrule{6-8} \cmidrule{10-12}
+%%     & $t=0$ & $t=1$ & $t=2$ && $t=0$ & $t=1$ & $t=2$ \\ \midrule
+%%     \rowcolor[gray]{.95} $c$ & 1 & 2 & 3 && 4 & 5 & 6 \\
+%%     \rowcolor[gray]{1.0} $c$ & 1 & 2 & 3 && 4 & 5 & 6 \\
+%%     \bottomrule
+%%   \end{tabular}
+%%   \caption{Caption}
+%% \end{table}
+
+%%=======================================================================
+%%     OLDER FIGURE/TABLE
+%%=======================================================================
+%% \begin{center}
+%%   \includegraphics[width=0.75\linewidth]{}
+%%   \captionof{figure}{}
+%% \end{center}
+%%
+%% \begin{center}
+%%   \begin{tabular}{rl}
+%%     \includegraphics[width=0.5\linewidth]{} &
+%%     \includegraphics[width=0.5\linewidth]{} \\
+%%     \includegraphics[width=0.5\linewidth]{} &
+%%     \includegraphics[width=0.5\linewidth]{} \\
+%%   \end{tabular}
+%%   \captionof{figure}{}
+%% \end{center}
+%%
+%% \begin{center}
+%%   \begin{tabular}{lll}
+%%     \hline
+%%     A & B & C \\
+%%     \hline
+%%     \hline
+%%     1 & 2 & 3 \\
+%%     \hline
+%%   \end{tabular}
+%%   \captionof{table}{test}
+%% \end{center}

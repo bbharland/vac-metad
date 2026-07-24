@@ -1,0 +1,352 @@
+\documentclass[twocolumn]{notes}
+\usepackage{notes}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{siunitx}
+\usepackage{mathtools}
+
+\title{Plan for Assessing 2D Density Estimation Methods on Large Data and Under Biased Sampling}
+\date{2026-05-04}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+% \begin{abstract}
+% This document provides a detailed, practical plan for evaluating probability density estimation (PDE) methods for a large ($N\approx 10^6$) dataset in 2D, including (i) a ``master'' high-accuracy reference density built from the full dataset, (ii) compact approximations such as kernel density estimation (KDE) and Gaussian mixture models (GMMs), and (iii) densities constructed from biased (non-i.i.d. from target) sampling with reweighting. It emphasizes objective evaluation metrics (log-likelihood, integrated errors, calibration diagnostics), computational considerations (scalability, uncertainty estimation), and modern alternatives (diffusion KDE, fast KDE approximations, normalizing flows), with classic and recent references and pointers to Python implementations.
+% \end{abstract}
+
+\section{Problem setup and notation}
+
+You observe samples $x_i=(x_{i1},x_{i2})\in\mathbb{R}^2$.
+\begin{itemize}[leftmargin=2em]
+\item \textbf{Full dataset:} $\mathcal{D}=\{x_i\}_{i=1}^N$ with $N\approx 10^6$.
+\item \textbf{Target density:} unknown $p(x)$ generating (ideal) unbiased samples.
+\item \textbf{Biased sampling / importance weights:} you may also have samples $x_i\sim q(x)$ with known or estimated weights
+\[
+w_i \propto \frac{p(x_i)}{q(x_i)}.
+\]
+(Or in practice: weights produced by a sampling bias correction / reweighting scheme.)
+\end{itemize}
+
+Your objectives:
+\begin{enumerate}[leftmargin=2em]
+\item Construct a high-accuracy \emph{reference} density $\hat p_{\mathrm{ref}}$ using the full dataset.
+\item Fit compact models $\hat p_\theta$ (KDE, GMM, etc.) and compare them to the reference and/or to held-out data.
+\item Evaluate whether a reweighted biased sample reproduces $p(x)$ well, and diagnose failure modes (weight degeneracy, support mismatch, etc.).
+\end{enumerate}
+
+\section{Overall evaluation principles}
+
+\subsection{Use multiple complementary metrics}
+No single metric is universally best. In density estimation, it is standard to triangulate:
+\begin{itemize}[leftmargin=2em]
+\item \textbf{Out-of-sample log-likelihood (OOS-LL):} evaluate $\frac{1}{n}\sum_{j=1}^n \log \hat p(x_j)$ on held-out unbiased test data. This is often the most operational metric when downstream use involves likelihoods.
+\item \textbf{Integrated error proxies:} e.g.\ ISE/MISE (squared error integrated over domain), and approximations via grids, Monte Carlo, or reference density.
+\item \textbf{Distributional distances:} Jensen--Shannon, Wasserstein, energy distance, MMD (often computed between samples rather than densities).
+\item \textbf{Calibration and structure diagnostics:} contour plots, probability integral transform (PIT) type diagnostics (more natural in 1D but can be adapted), local error maps, tail checks.
+\end{itemize}
+
+\subsection{Separate three evaluation ``truth'' settings}
+\begin{enumerate}[leftmargin=2em]
+\item \textbf{Real-data, no ground truth:} compare methods by OOS-LL, stability, and agreement with a strong reference.
+\item \textbf{Synthetic benchmark with known $p(x)$:} generate data from a known mixture / heavy-tailed / multimodal distribution to validate metrics and detect systematic biases.
+\item \textbf{Biased-sampling regime:} evaluate the impact of reweighting (effective sample size, variance blow-up) and compare to unbiased baselines.
+\end{enumerate}
+
+\section{Step-by-step plan}
+
+\subsection{Step 0: Data preparation and exploratory analysis}
+\begin{enumerate}[leftmargin=2em]
+\item Standardize coordinates (e.g.\ z-scoring or whitening) for methods sensitive to scaling (KDE bandwidths, GMM covariance regularization, flows).
+\item Visualize coarse structure:
+  \begin{itemize}
+  \item 2D histograms / hexbin at multiple resolutions.
+  \item random subsample scatter (e.g.\ $10^5$ points).
+  \end{itemize}
+\item Determine a working domain $\Omega\subset\mathbb{R}^2$:
+  \begin{itemize}
+  \item bounding box of, say, $[0.001,0.999]$ quantiles per dimension;
+  \item plus a margin for tails if needed.
+  \end{itemize}
+This domain will be used for gridded integrated metrics.
+\end{enumerate}
+
+\subsection{Step 1: Construct a ``master'' reference density $\hat p_{\mathrm{ref}}$}
+The reference should be as accurate as feasible, and \emph{more accurate than} the compact models you compare.
+
+\subsubsection{Option A (recommended in 2D): high-resolution histogram + smoothing / bias correction}
+\begin{enumerate}[leftmargin=2em]
+\item Build a very fine 2D histogram on $\Omega$ (e.g.\ $1024\times 1024$ grid, depending on memory).
+\item Apply a principled smoother:
+  \begin{itemize}
+  \item diffusion KDE (Botev--Grotowski--Kroese) style smoothing; or
+  \item spline / thin-plate smoothing on log-density with positivity constraints; or
+  \item convolving with a very small Gaussian kernel chosen to reduce discretization error.
+  \end{itemize}
+\item Normalize numerically to integrate to 1 on $\Omega$ (and optionally estimate tail mass outside $\Omega$).
+\end{enumerate}
+Rationale: in 2D with $10^6$ points, a carefully constructed gridded density can be extremely accurate, fast to evaluate, and stable.
+
+\subsubsection{Option B: KDE with carefully tuned bandwidth and fast evaluation}
+\begin{enumerate}[leftmargin=2em]
+\item Fit a high-quality KDE using the full data with strong bandwidth selection (see below).
+\item Use fast approximation for evaluation (FFT on grid, tree-based, or low-rank approximations).
+\end{enumerate}
+Note: ``vanilla KDE'' scales poorly for naive evaluation at many points; for reference density you typically want either gridded evaluation or fast KDE approximations.
+
+\subsubsection{Option C: Flexible parametric density (e.g.\ high-K GMM or normalizing flow) trained on full data}
+\begin{enumerate}[leftmargin=2em]
+\item Fit a large GMM with model selection (BIC/AIC, held-out LL) and strong regularization.
+\item Or fit a normalizing flow and validate carefully.
+\end{enumerate}
+Caveat: a learned model can be ``too flexible'' and may hide misspecification; for a \emph{reference} it must be thoroughly validated (e.g.\ via synthetic tests and stability checks).
+
+\subsection{Step 2: Define the compact candidate models}
+Create a method suite with varying complexity/size. For each method, define:
+\begin{itemize}[leftmargin=2em]
+\item number of parameters / memory footprint,
+\item fit time,
+\item evaluation time per point,
+\item ability to incorporate weights $w_i$.
+\end{itemize}
+
+\subsubsection{Baseline methods}
+\begin{enumerate}[leftmargin=2em]
+\item \textbf{2D histogram / adaptive histogram} (e.g.\ Bayesian blocks, KD-tree binning).
+\item \textbf{KDE}:
+  \begin{itemize}
+  \item Gaussian kernel, full bandwidth matrix;
+  \item optionally variable bandwidth / adaptive KDE.
+  \end{itemize}
+\item \textbf{GMM}:
+  \begin{itemize}
+  \item diagonal vs full covariances;
+  \item component counts $K\in\{2,4,8,\dots,512\}$.
+  \end{itemize}
+\end{enumerate}
+
+\subsubsection{Modern/high-impact alternatives worth including}
+\begin{enumerate}[leftmargin=2em]
+\item \textbf{Diffusion KDE} (notably robust bandwidth selection in low dimension).
+\item \textbf{Fast KDE approximations}:
+  \begin{itemize}
+  \item FFT-based KDE on grids (excellent in 2D),
+  \item tree-based approximations,
+  \item random Fourier features (approximate kernel evaluation).
+  \end{itemize}
+\item \textbf{Normalizing flows} as compact neural density estimators (NDEs), especially in 2D where training is relatively straightforward.
+\item \textbf{Copula-based modeling} if marginals and dependence structure suggest it.
+\end{enumerate}
+
+\subsection{Step 3: Data splitting and evaluation protocol}
+\subsubsection{Unbiased evaluation split}
+If you have unbiased samples from $p(x)$:
+\begin{enumerate}[leftmargin=2em]
+\item Split $\mathcal{D}$ into train/validation/test, e.g.\ 80/10/10.
+\item Fit each candidate on train; tune hyperparameters on validation; report final metrics on test.
+\item Repeat for multiple random splits to quantify variability.
+\end{enumerate}
+
+\subsubsection{If you do \emph{not} have an unbiased test set}
+Then OOS-LL is not directly interpretable. Use:
+\begin{enumerate}[leftmargin=2em]
+\item A carefully constructed reference $\hat p_{\mathrm{ref}}$ from the full dataset.
+\item Evaluate candidate models against $\hat p_{\mathrm{ref}}$ via integrated metrics on a grid or Monte Carlo.
+\end{enumerate}
+Also consider creating synthetic known-$p$ benchmarks to sanity-check the conclusions.
+
+\subsection{Step 4: Metrics (and what to use when)}
+
+\subsubsection{4.1 Out-of-sample log-likelihood (preferred when possible)}
+Given held-out unbiased samples $\{x_j^{\mathrm{test}}\}_{j=1}^n$:
+\[
+\mathrm{OOSLL}(\hat p)=\frac{1}{n}\sum_{j=1}^n \log \hat p(x_j^{\mathrm{test}}).
+\]
+Report also standard error across splits.
+
+\subsubsection{4.2 ISE/MISE against a reference density}
+If $\hat p_{\mathrm{ref}}$ is available on a grid $\{g_m\}$ with cell area $\Delta A$:
+\[
+\mathrm{ISE}(\hat p,\hat p_{\mathrm{ref}})\approx \sum_m\left(\hat p(g_m)-\hat p_{\mathrm{ref}}(g_m)\right)^2\,\Delta A.
+\]
+This is a proxy for MISE; you can bootstrap datasets to approximate the expectation.
+
+\subsubsection{4.3 KL / JS divergence (with care)}
+Approximate (forward) KL by grid quadrature:
+\[
+D_{\mathrm{KL}}(\hat p_{\mathrm{ref}}\Vert \hat p)\approx \sum_m \hat p_{\mathrm{ref}}(g_m)\log\frac{\hat p_{\mathrm{ref}}(g_m)}{\hat p(g_m)}\,\Delta A.
+\]
+Caution: requires numerical stabilization where $\hat p$ is tiny. JS divergence is often more stable.
+
+\subsubsection{4.4 Two-sample distances (sample-based)}
+If you can sample from $\hat p$ (easy for GMM; possible for KDE; easy for flows):
+\begin{itemize}[leftmargin=2em]
+\item MMD with characteristic kernels,
+\item energy distance,
+\item Wasserstein-2 (in 2D feasible with entropic OT approximations).
+\end{itemize}
+These compare distributions without evaluating densities everywhere.
+
+\subsubsection{4.5 Local diagnostics}
+Compute maps over $\Omega$:
+\begin{itemize}[leftmargin=2em]
+\item log-density error: $\log \hat p - \log \hat p_{\mathrm{ref}}$,
+\item relative error: $(\hat p-\hat p_{\mathrm{ref}})/\hat p_{\mathrm{ref}}$,
+\item tail-region checks (quantile-defined masks).
+\end{itemize}
+
+\subsection{Step 5: Hyperparameter selection for KDE and why LSCV/MISE matter}
+
+\subsubsection{MISE vs LSCV in practice}
+\begin{itemize}[leftmargin=2em]
+\item \textbf{MISE} is a theoretical risk (expected ISE) used to study optimal bandwidth rates; it is not directly computable without knowing $p$.
+\item \textbf{LSCV} (least-squares cross-validation) provides a data-driven proxy to choose bandwidth by estimating ISE-related criteria.
+\end{itemize}
+
+In 2D with large $N$, LSCV can work, but it may be:
+\begin{itemize}[leftmargin=2em]
+\item numerically noisy (objective can be rough),
+\item expensive if implemented naively.
+\end{itemize}
+
+\subsubsection{Practical recommendation for KDE bandwidth}
+\begin{enumerate}[leftmargin=2em]
+\item Use \textbf{held-out log-likelihood CV} for bandwidth selection if your downstream goal is likelihood-based and you have unbiased validation data.
+\item Use \textbf{diffusion KDE} style methods as a robust alternative in low dimension.
+\item Use LSCV as a comparison point, but do not rely on it exclusively.
+\end{enumerate}
+
+\subsection{Step 6: Biased sampling and reweighting --- how to assess quality}
+
+\subsubsection{6.1 First diagnose the weights}
+Given biased draws $x_i\sim q$ and weights $w_i$:
+\begin{enumerate}[leftmargin=2em]
+\item Normalize: $\tilde w_i = w_i / \sum_j w_j$.
+\item Compute \textbf{effective sample size (ESS)}:
+\[
+\mathrm{ESS} = \frac{1}{\sum_i \tilde w_i^2}.
+\]
+If ESS is small relative to $N$, density estimation will have high variance no matter the method.
+\item Check for \textbf{support mismatch}: regions where unbiased data exists but biased sampler rarely visits (weights cannot fix missing support).
+\end{enumerate}
+
+\subsubsection{6.2 Construct weighted density estimators}
+For each method, ensure correct handling of weights:
+\begin{itemize}[leftmargin=2em]
+\item \textbf{Weighted KDE:} $\hat p(x)=\sum_i \tilde w_i K_h(x-x_i)$.
+\item \textbf{Weighted GMM:} weighted EM updates (many libraries allow \texttt{sample\_weight}).
+\item \textbf{Flows:} train by maximizing weighted log-likelihood $\sum_i \tilde w_i \log p_\theta(x_i)$ (supported in most deep learning frameworks).
+\end{itemize}
+
+\subsubsection{6.3 How to evaluate reweighted density quality}
+There are three distinct situations:
+
+\paragraph{Case A: You have an unbiased test set from $p(x)$.}
+Then the best metric is typically \textbf{OOS log-likelihood on unbiased test data}. Supplement with integrated error to a reference.
+
+\paragraph{Case B: You only have biased weighted data, but you know (or can simulate) the biasing mechanism.}
+Then create a synthetic benchmark where you can draw unbiased samples and compare methods under controlled reweighting.
+
+\paragraph{Case C: You only have biased weighted data and no unbiased evaluation data.}
+Then you are in an ill-posed regime; you can still assess:
+\begin{itemize}[leftmargin=2em]
+\item \textbf{Internal stability:} sensitivity to resampling, weight clipping, or regularization.
+\item \textbf{Moment checks:} compare weighted empirical moments to reference moments if any are known.
+\item \textbf{Density ratio diagnostics:} estimate $p/q$ (density ratio) directly and check consistency; see density ratio estimation literature.
+\end{itemize}
+
+\subsubsection{6.4 Is MISE or LSCV ``best'' for reweighted data?}
+In importance-weighted settings, standard CV objectives can be misleading if applied naively. Practical guidance:
+\begin{itemize}[leftmargin=2em]
+\item If your goal is reproducing $p(x)$, evaluate using \textbf{unbiased test samples} whenever possible.
+\item For model selection under covariate shift / importance weighting, use \textbf{importance-weighted cross-validation} criteria designed for the setting (see Sugiyama et al.).
+\item MISE is mainly a theoretical yardstick; LSCV is an estimator of an ISE-related criterion, but with weights it needs careful adaptation and can be high variance when weights are heavy-tailed.
+\end{itemize}
+
+\subsection{Step 7: Practical computational workflow (Python-oriented)}
+
+\subsubsection{7.1 Suggested baseline implementation stack}
+\begin{itemize}[leftmargin=2em]
+\item \texttt{numpy}, \texttt{scipy}
+\item \texttt{scikit-learn}: \texttt{KernelDensity}, \texttt{GaussianMixture} (note: GMM supports sample weights; KDE support varies by version/approach---weighted KDE may require custom code or other packages)
+\item \texttt{statsmodels}: KDE utilities (check weight support)
+\item GPU / DL: \texttt{pytorch} + \texttt{nflows} for normalizing flows
+\end{itemize}
+
+\subsubsection{7.2 Evaluation at scale}
+\begin{itemize}[leftmargin=2em]
+\item Prefer grid-based evaluation for 2D integrated metrics (fast, vectorized).
+\item For log-likelihood on $10^5$--$10^6$ points, ensure batch evaluation and avoid $O(N^2)$ kernels without approximation.
+\item Consider:
+  \begin{itemize}
+  \item FFT-based KDE on a grid for KDE-like estimators,
+  \item large-$K$ GMM for compactness and speed at evaluation time ($O(K)$ per point),
+  \item flows for constant-time-ish evaluation once trained (depends on architecture depth).
+  \end{itemize}
+\end{itemize}
+
+\subsubsection{7.3 Robustness studies you should include}
+\begin{enumerate}[leftmargin=2em]
+\item \textbf{Subsampling curve:} performance vs training set size (e.g.\ $10^3,10^4,10^5,10^6$).
+\item \textbf{Weight stress test:} introduce increasing weight variance (or simulate stronger bias) and plot performance vs ESS.
+\item \textbf{Tail emphasis:} evaluate metrics restricted to rare regions (e.g.\ outside central 95\% mass).
+\end{enumerate}
+
+\section{Recommended deliverables (what to produce at the end)}
+\begin{enumerate}[leftmargin=2em]
+\item A table of methods with (i) memory footprint, (ii) fit time, (iii) eval time, (iv) ability to handle weights.
+\item A primary scorecard:
+  \begin{itemize}
+  \item OOS log-likelihood (if unbiased test exists),
+  \item KL/JS to reference density on grid,
+  \item ISE to reference density on grid,
+  \item plus ESS and stability metrics for weighted case.
+  \end{itemize}
+\item A figure set:
+  \begin{itemize}
+  \item reference density contours,
+  \item error heatmaps per method,
+  \item performance vs model size curve (e.g.\ GMM $K$; KDE bandwidth; flow parameters),
+  \item performance vs ESS curve for the reweighted scenario.
+  \end{itemize}
+\end{enumerate}
+
+\section{References (classic and modern)}
+
+\subsection*{Classic / foundational}
+\begin{itemize}[leftmargin=2em]
+\item B. W. Silverman, \emph{Density Estimation for Statistics and Data Analysis}, Chapman \& Hall, 1986.
+\item D. W. Scott, \emph{Multivariate Density Estimation: Theory, Practice, and Visualization}, Wiley, 1992 (and later editions).
+\item M. P. Wand and M. C. Jones, \emph{Kernel Smoothing}, Chapman \& Hall, 1995.
+\item G. J. McLachlan and D. Peel, \emph{Finite Mixture Models}, Wiley, 2000.
+\item A. W. Bowman, ``An alternative method of cross-validation for the smoothing of density estimates,'' \emph{Biometrika}, 71(2):353--360, 1984. (Classic CV for density smoothing.)
+\item G. R. Terrell and D. W. Scott, ``Variable kernel density estimation,'' \emph{Annals of Statistics}, 20(3):1236--1265, 1992. (Adaptive/variable bandwidth KDE.)
+\end{itemize}
+
+\subsection*{High-impact modern methods}
+\begin{itemize}[leftmargin=2em]
+\item Z. I. Botev, J. F. Grotowski, and D. P. Kroese, ``Kernel density estimation via diffusion,'' \emph{Annals of Statistics}, 38(5):2916--2957, 2010. (Diffusion KDE; often excellent in low dimensions.)
+\item D. J. Rezende and S. Mohamed, ``Variational inference with normalizing flows,'' \emph{ICML}, 2015. (Normalizing flows; foundation for modern neural density estimation.)
+\item M. Sugiyama, T. Suzuki, and T. Kanamori, \emph{Density Ratio Estimation in Machine Learning}, Cambridge University Press, 2012. (Core reference for importance weighting / covariate shift diagnostics.)
+\item M. Sugiyama, M. Krauledat, and K.-R. M\"uller, ``Covariate shift adaptation by importance weighted cross validation,'' \emph{JMLR}, 8:985--1005, 2008. (Key for weighted CV/model selection under shift.)
+\end{itemize}
+
+\subsection*{Python implementations to cite in your methods section}
+\begin{itemize}[leftmargin=2em]
+\item \texttt{scikit-learn}: KDE and GMM implementations and model selection tools (\url{https://scikit-learn.org/}).
+\item \texttt{statsmodels}: KDE utilities (\url{https://www.statsmodels.org/}).
+\item \texttt{nflows}: normalizing flows in PyTorch (\url{https://github.com/bayesiains/nflows}).
+\item (If relevant) \texttt{sbi}: neural density estimators for simulation-based inference (\url{https://github.com/mackelab/sbi}).
+\end{itemize}
+
+\bigskip
+\noindent\textbf{Note.} The choice between MISE/LSCV vs likelihood-based criteria depends strongly on whether you can evaluate on unbiased data from the target distribution. In biased/reweighted settings, use importance-weight-aware validation criteria and always report weight diagnostics (ESS, tail behavior), because estimator variance is often dominated by weight degeneracy rather than model class.
+
+\end{document}

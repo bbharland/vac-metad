@@ -1,0 +1,234 @@
+\documentclass[twocolumn]{notes}
+\usepackage{notes}
+
+\begin{document}
+\title{Discrete-state kinetics and Markov models}
+\date{\today} % \formatdate{10}{11}{2022}
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Discretized Kinetics: Simple examples and transition matrix basics}
+
+\href{https://www.physicallensonthecell.org/discrete-state-kinetics-and-markov-models}{\color{darkred}Zuckermans physical lens article.}
+
+\subsection{Overview}
+\begin{itemizec}
+    \item life: non-equilibrium = active transport, etc.
+    \item physics: non-equilibrium steady state
+    \item continuum processes: Fokker-Planck/Smoluchowski
+    \item these equations hard to solve!
+    \item go to discrete system
+    \item simplest discrete system = two state
+\end{itemizec}
+\subsection{Continuous vs. discretized time}
+\begin{itemizec}
+    \item continuous time: standard ODEs of chemical kinetics
+    \item discrete time: simulation, timesteps
+\end{itemizec}
+
+\subsection{Continuous time two state system}
+\begin{itemizec}
+    \item mass action equations
+    \begin{align*}
+    \myder{p_0}{t} &= -k_+p_0 + k_-p_1 \\
+    \myder{p_1}{t} &= k_+p_0 - k_-p_1
+    \end{align*}
+    equivalent to
+    \[
+        \myder{}{t}p(t) = \begin{bmatrix}
+            k_+ & k_- \\ k_+ & -k_-
+            \end{bmatrix} p(t)
+    \]
+    \item assumes rate constants are independent of concentration (ignore aggregation, crowding effects)
+    \item summing mass action equations gives
+    \[
+        \myder{}{t}[p_0 + p_1] = 0
+    \]
+    which is the mass conservation condition
+    \[
+        p_0 + p_1 = 1
+    \]
+    \item therefore, solving one equation is sufficient in this case.
+    \begin{align*}
+        \myder{p_0}{t} = -k_+p_0 + k_-p_1 \\
+        \myder{p_0}{t} + \underbrace{[k_+ + k_-]}_{k ~\equiv~ \tau_\mathrm{rel}^{-1}}p_0 - k_- = 0
+    \end{align*}
+    ane we have a first order \emph{linear} ODE
+    \item use the method of \emph{integrating factors} to solve equations of the form
+    \[
+        y' + p(x)y + q(x) = 0
+    \]
+    and introduce the IF:
+    \[
+        r(x) = \mye^{\int\myd{x}p(x)} \Rightarrow r'(x) = \mye^{\int\myd{x}p(x)}p(x) = r(x)p(x)
+    \]
+    multiplying the ODE by $r(x)$ gives
+    \begin{align*}
+        r(x)[y' + p(x)y + q(x)] &= 0 \\
+        r(x)y' + \underbrace{r(x)p(x)}_{r'(x)}y + r(x)q(x) &= 0 \\
+        [r(x)y]' + r(x)q(x) &= 0
+    \end{align*}
+    which can be solve by integration.
+    % NB:  the IF should be regarded as a mathematical trick.  The integral is indefinite and can carry any arbitrary constant.  This additive constant becomes a multiplicative constant for $r(x)$.  We will see shortly that this changing this arbitrary constant will not ruin the math, but it will cancel in the final expression, so we are free to ignore it.
+
+    % We currently get
+    % \begin{align*}
+    %     r(x)y &= -\int\myd{x}r(x)q(x) \\
+    %     y &= -\frac{1}{r(x)}\int\myd{x}r(x)q(x)
+    % \end{align*}
+    \item for our system, we have
+    \[
+        y = p_0 \quad p(t) = k = \tau_\mathrm{rel}^{-1} \quad q(t) = -k_-
+        \quad r(t) = \mye^{kt}
+    \]
+    so
+    \begin{align*}
+        \myder{}{t}\Big[\mye^{kt}p_0(t)\Big] &= k_- \mye^{kt} \\
+        \Big[\mye^{kt'}p_0(t')\Big]_0^t &= k_- \int_0^t\myd{t'}\mye^{kt'} \\
+        \mye^{kt}p_0(t) - p_0(0) &= \frac{k_-}{k}\Big[\mye^{kt} - 1\Big] \\
+        p_0(t) &= \mye^{-kt}p_0(0) + \frac{k_-}{k}\Big[1 - \mye^{-kt}\Big]
+    \end{align*}
+    \item fluxes
+    \[
+        \mathrm{flux}_+ = k_+p_0 \quad \mathrm{flux}_- = k_-p_1
+    \]
+    \item detailed balance
+    \[
+        k_+p_0^\mathrm{eq} = k_-p_1^\mathrm{eq} \quad\Rightarrow\quad
+        \frac{p_1^\mathrm{eq}}{p_0^\mathrm{eq}} = \frac{k_+}{k_-} = K_{eq}
+    \]
+    Notice that
+    \[
+        \frac{k_-}{k} = [1 + K_{eq}]^{-1}
+    \]
+    and
+    \[
+        \frac{p_1^\mathrm{eq}}{p_0^\mathrm{eq}}
+        = \frac{1 - p_0^\mathrm{eq}}{p_0^\mathrm{eq}}
+        = \frac{1}{p_0^\mathrm{eq}} - 1 = K_{eq}
+    \]
+    so
+    \[
+        p_0^\mathrm{eq} = [1 + K_{eq}]^{-1} = \frac{k_-}{k}
+    \]
+    Final expressions:  this is the familiar fluctuation-dissipation result for relaxation to equilibrium
+    \begin{align*}
+        p_0(t) - p_0^\mathrm{eq}
+        &= \Big[p_0(0) - p_0^\mathrm{eq}\Big]\mye^{-kt} \\
+        p_1(t) - p_1^\mathrm{eq}
+        &= \Big[p_1(0) - p_1^\mathrm{eq}\Big]\mye^{-kt}
+    \end{align*}
+    \item critical result of nonequilibrium statistical mechanics:  systems relax to equilibrium exponentially.
+    \item the timescale of relaxation is given by the transition rates:
+    \[
+        \Delta X\,\mye^{-kt} = \Delta X\,\mye^{-(k_+ + k_-)t}
+        = \Delta X\,\mye^{-t/\tau_\mathrm{rel}}
+    \]
+\end{itemizec}
+
+\subsection{Continuous time three state system}
+\begin{itemizec}
+    \item conservation of probability mass for closed system
+    \[
+        \sum_i p_i(t) = 1
+    \]
+\end{itemizec}
+
+
+% \appendix
+% \input{sec-xxx}
+
+\end{document}
+
+
+
+% \usepackage{minted}
+% \begin{minted}[mathescape, linenos]{python}
+%     # Note: $\pi=\lim_{n\to\infty}\frac{P_n}{d}$
+%     title = "Hello World"
+% \end{minted}
+
+%%=======================================================================
+%%     PREFERRED FIGURE/TABLE
+%%=======================================================================
+%%                                 %%-------------------------------------%%
+%% \begin{figure}[h!]              %%  caption right of figure
+%%   \begin{minipage}[c]{0.67\textwidth}
+%%     \includegraphics[width=\textwidth]{imgfile.png}
+%%   \end{minipage}\hfill
+%%   \begin{minipage}[c]{0.3\textwidth}
+%%     \caption{Caption on the right hand side}
+%%     \label{fig:}
+%%   \end{minipage}
+%% \end{figure}
+%%                                 %%-------------------------------------%%
+%% \begin{figure}[h!]\centering    %%  caption below figure
+%%   \includegraphics[width=0.5\textwidth]{imgfile.png}
+%%   \caption{General caption}
+%%   \label{fig:label}
+%% \end{figure}
+%%                                 %%-------------------------------------%%
+%% \begin{figure}[!h]\centering    %%  array of figures with subcaptions
+%%   \subfloat[]{\includegraphics[width=0.5\textwidth]{}}
+%%   \subfloat[]{\includegraphics[width=0.5\textwidth]{}} \\
+%%   \subfloat[]{\includegraphics[width=0.5\textwidth]{}}
+%%   \subfloat[]{\includegraphics[width=0.5\textwidth]{}} \\
+%%   \subfloat[]{\includegraphics[width=0.5\textwidth]{}}
+%%   \subfloat[]{\includegraphics[width=0.5\textwidth]{}}
+%%   \caption{General caption}
+%%   \label{fig:label}
+%% \end{figure}
+%%                                        %%------------------------------%%
+%% \begin{table}[!h]\centering\ra{1.3}    %%  simple table
+%%   \begin{tabular}{@{}rrrr@{}}\toprule
+%%     & $t=0$ & $t=1$ & $t=2$ \\ \midrule
+%%     $c$ & 1 & 2 & 3 \\
+%%     $c$ & 1 & 2 & 3 \\
+%%     \bottomrule
+%%   \end{tabular}
+%%   \caption{Caption}
+%% \end{table}
+%%                                        %%------------------------------%%
+%% \begin{table}[!h]\centering\ra{1.3}    %%  complicated table
+%%   \begin{tabular}{@{}rrrrcrrr@{}}\toprule
+%%     & \multicolumn{3}{c}{$w = 8$} & \phantom{abc}&
+%%     \multicolumn{3}{c}{$w = 16$}\\
+%%     \cmidrule{2-4} \cmidrule{6-8} \cmidrule{10-12}
+%%     & $t=0$ & $t=1$ & $t=2$ && $t=0$ & $t=1$ & $t=2$ \\ \midrule
+%%     \rowcolor[gray]{.95} $c$ & 1 & 2 & 3 && 4 & 5 & 6 \\
+%%     \rowcolor[gray]{1.0} $c$ & 1 & 2 & 3 && 4 & 5 & 6 \\
+%%     \bottomrule
+%%   \end{tabular}
+%%   \caption{Caption}
+%% \end{table}
+
+%%=======================================================================
+%%     OLDER FIGURE/TABLE
+%%=======================================================================
+%% \begin{center}
+%%   \includegraphics[width=0.75\linewidth]{}
+%%   \captionof{figure}{}
+%% \end{center}
+%%
+%% \begin{center}
+%%   \begin{tabular}{rl}
+%%     \includegraphics[width=0.5\linewidth]{} &
+%%     \includegraphics[width=0.5\linewidth]{} \\
+%%     \includegraphics[width=0.5\linewidth]{} &
+%%     \includegraphics[width=0.5\linewidth]{} \\
+%%   \end{tabular}
+%%   \captionof{figure}{}
+%% \end{center}
+%%
+%% \begin{center}
+%%   \begin{tabular}{lll}
+%%     \hline
+%%     A & B & C \\
+%%     \hline
+%%     \hline
+%%     1 & 2 & 3 \\
+%%     \hline
+%%   \end{tabular}
+%%   \captionof{table}{test}
+%% \end{center}

@@ -1,0 +1,115 @@
+\section{ES metrics}
+\subsection{Master list}
+\begin{enumeratec}
+    \item Rate constant-based.  If $\tau = k^{-1}$, Hummer suggests a formula like
+    \[
+        \rr{Boost} = \sum_i Q_i\frac{\tau_{+,i} + \tau_{-,i}}{\tau_{+,0} + \tau_{-,0}}
+    \]
+    \item Conformational entropy-based.  Plot $S_\rr{conf}$ over $n$.  Look at the trends.  Compare initial slope.
+    \item FES-based.  Plot $\norm{F_\infty-F_n}^2$ vs. $n$ and do the same as above.
+    \item PDF-based.  Do the above, except using:
+    \[
+        p(x, n) = \textrm{estimate of unbiased PDF at step }n
+    \]
+    \item MFPT-based.  Something like
+    \[
+        \rr{Boost}_n = \frac{\rr{MFPT}_0}{\rr{MFPT}_n}
+    \]
+    Recognize that MFPT is directly related to rate constants.
+    \item ACF-based.  Generally,
+    \[
+        C_t = \frac{\langle(f(x_t)-\bar{f})f(x_0)-\bar{f})}{\myVar{f(x)}}
+    \]
+    The most sensible observables for which to inspect autocorrelation are the eigenfunctions which are zero-mean and unit variance by construction.  Use the known data-rich functions.  Ah!  They are not unit variance over limited datasets!
+    \[
+        C_t \Leftarrow \{\psi_1(s_k),\,\psi_1(s_{k+t})\}_{k=1}^n
+    \]
+    \item ``Best practise'' = measure distances for FES/PDF and do a number of ES simulations to establish the central tendency and variance of convergence rates.
+    \item ``Best practise'' = for FES, bootstrap error bars to observe when convergence has occured to within uncertainty.
+    \item Exploration-extent based.
+    \begin{itemizec}
+        \item fraction of alanine dipeptide states visited (\emph{e.g.} 2/6)
+        \item fraction of $\Omega_s$ explored.  Area or fraction of non-zero histogram bins.  This is going to depend on bin-size, so is a little rough.
+    \end{itemizec}
+\end{enumeratec}
+A big idea here is to try a bunch/all of these methods and see if you identify any trends or if there is something else instructive.
+
+\subsection{Conformational entropy}
+This is
+\[
+    S = -k_\mathrm{B}\int\myd{x}\rho(x)\log\rho(x) =
+    +k_\mathrm{B}\int\myd{x}\rho(x)\log\frac{1}{\rho(x)}
+\]
+\begin{figure}[h!]\centering    %%  caption below figure
+  \includegraphics[width=0.4\textwidth]{plogp.png}
+  % \caption{General caption}
+  % \label{fig:label}
+\end{figure}
+The plot shows how the integrand depends on the density $p(x)$.  Computationally, for a 2D density,
+\[
+    S = k_\mathrm{B}\Delta x_1\Delta x_2 \sum_{i,j}^N
+    \rho(x_{ij})\log\frac{1}{\rho(x_{ij})}
+\]
+This entropy will have a maximum when
+\[
+    \rho(x) = Z^{-1}\mye^{-\beta E(x)}
+\]
+This can be shown by optimizing
+\[
+    G = E - TS \quad\Rightarrow\quad \myfunctional{G}{\rho} = 0
+\]
+subject to the constraint that $\rho$ is normalized.
+
+Another way to approach conformational entropy is to follow Karplus and break the conformational space into $n$ distinct metastable states.  Within each state $s_i$ there will be some internal conformational entropy, $S_i^b$.  There is flexibility in how this is computed, whether as a sub-histogram (re-normalized for each free energy basin) or by carrying out Normal Mode Analysis for an energy basin.
+
+In ths way, the fraction of being in any discrete state is given by $p_i$ and the conformational entropy of the system is
+\[
+    S = \sum_i^n p_i\,S_i^b - k_\mathrm{B}\sum_i^n p_i\log p_i
+\]
+\subsection{2D surfaces: PDFs and FESs}
+For convenience, define any surface
+\[
+    u(x, y)
+\]
+over $N\times N$ grids so that integrating over the surface is
+\[
+    I = \int_{x_0}^{x_N}\myd{x}\int_{y_0}^{y_N}\myd{y}u(x, y)
+    \sim \Delta x\Delta y\sum_{i,j}^Nu(x_i,y_j)
+\]
+and the domain has volume
+\[
+    |\Omega| = (x_N-x_0)(y_N-y_0) = N^2\Delta x\Delta y
+\]
+The standard gotcha:  A grid containing $N$ points is defined by $(N+1)$ bin edges.  Taking the Riemann sum defined by the function/surface at the the left (lower) bin edge give the following definition of the mean.
+\[
+    \bar{u} = \frac{1}{|\Omega|}\int\dd x\int\myd{y}u(x,y)
+    \sim \frac{1}{N^2}\sum_{i,j}^N u(x_i,y_j)
+\]
+
+\subsection{Distance of a histogram from a reference}
+Recommended to use Jensen-Shannon divergence.  This is due to computational/mathematical considerations about ratios of histograms where the support of the numerator extends to places where the denominator is 0, which blows up the sum.
+\[
+    D_\rr{JS}(P\parallel Q) = \half\Big[ D_\rr{KL}(P\parallel M) + D_\rr{KL}(Q\parallel M)\Big]
+\]
+where $M$ is the intermediate distribution
+\[
+    M = \half [P + Q]
+\]
+and $D_\rr{KL}$ is
+\begin{align*}
+    D_\rr{KL}(P\parallel Q) &= \int\dd x\int\myd{y}p(x,y)\log\frac{p(x,y)}{q(x,y)} \\
+    &\sim \Delta x\Delta y\sum_{i,j}^N p(x_i,y_j)\log\frac{p(x_i,y_j)}{q(x_i,y_j)}
+\end{align*}
+
+\subsection{Distance of a FES from a reference}
+Either MSE and RMSD are very similar.  For a 2D FES sampled up to step $n$ (relative to the data rich FES, $F_\infty(x)$):
+\begin{align*}
+    \rr{MSE}(F_\infty, F_n) &= \frac{1}{|\Omega|}\int\dd x\int\myd{y}
+    \Big[F_\infty(x,y) - F_n(x,y) \Big]^2 \\
+    &\sim \frac{1}{N^2} \sum_{i,j}^N
+    \Big[F_\infty(x_i,y_j) - F_n(x_i,y_j) \Big]^2
+\end{align*}
+while the RMSD is (to a factor involving the number of bins and the volume of $x$-space)
+\[
+    \rr{RMSD}(F_\infty, F_n) = \sqrt{\rr{MSE}(F_\infty, F_n)}
+\]

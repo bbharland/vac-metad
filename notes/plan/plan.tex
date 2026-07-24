@@ -1,0 +1,174 @@
+\documentclass[twocolumn]{notes}
+\usepackage{notes}
+
+\begin{document}
+\title{Overall plan \& progress}
+\date{\today} % \formatdate{10}{11}{2022}
+\maketitle
+\tableofcontents
+\newpage
+
+\input{sec-big-picture}
+\input{sec-esmetrics}
+\input{sec-reweight-itre}
+\input{sec-reweight-wham}
+\input{sec-quality-cvs}
+
+\section{WT-Metadynamics key results and the PLUMED bias shift}
+
+The reasoning here begins by proposing to sample a free energy surface that has desireable qualities:
+\[
+    p_\gamma(s) \propto [p(s)]^{1/\gamma} ,\quad \gamma = \frac{T+\Delta T}{T}
+\]
+This is to be accomplished by biasing the simulation with a some potential $V_t(s)$.  So the question is then, what bias will give us our target distribution?
+\[
+    \frac{\mye^{-\beta[F(s)+V_t(s)]}}{Z_t} = \frac{\mye^{-\beta F(s)/\gamma}}{Z_\gamma}
+\]
+or, introducing the free energies associated with each ensemble
+\[
+    F(s)+V_t(s)-F_t = \gamma^{-1}F(s) - F_\gamma
+\]
+This gives
+\[
+    F(s) = [\gamma^{-1}-1]^{-1}\Big(V_t(s) - [F_t-F_\gamma] \Big)
+\]
+Now clean up
+\[
+    [\gamma^{-1}-1]^{-1} = \frac{1}{\gamma^{-1}-1} = \frac{\gamma}{1-\gamma}
+\]
+\textbf{Question}: what is the physical meaning of $F_t-F_\gamma$?  Does this become zero as the ensemble converges asymptotically toward the well-tempered ensemble?  Clearly, if they are the same ensemble, the MUST have the same free energy?
+
+Ok, we now have
+\begin{align*}
+    \beta F(s) &= \beta\frac{\gamma}{1-\gamma}V_t(s) - \beta\frac{\gamma}{1-\gamma}[F_t-F_\gamma] \\
+    &= \gamma\frac{\beta}{1-\gamma}V_t(s) - \gamma\frac{\beta}{1-\gamma}\Delta F_{\gamma t} \\
+    &= \gamma\Delta\beta V_t(s) - \gamma\Delta\beta \Delta F_{\gamma t}
+\end{align*}
+defining
+\[
+    \frac{\beta}{1-\gamma} = \Delta\beta
+\]
+This expression for $\beta F(s)$ above comes indirectly.  We asked, what bias gives the WT ensemble?  The answer involves the canonical ensemble and $F(s)$.  Rearranging the expression for $V_t(s)$ for $F(s)$ allows substitution back in the definition of the bias shift and gives the PLUMED formula for it.  We're looking at
+\[
+    \mye^{-\beta c_t} = \frac{Z_t}{Z} = \frac{\int\myd{s}\mye^{-\beta[F(s)+V_t(s)]}}{\int\myd{s}\mye^{-\beta F(s)}}
+\]
+Now, conceptually what we're looking at here is saying IF $V_t(s)$ gives the well-tempered ensemble, it can be written in terms of $F(s)$.  We do the converse.  Write $F(s)$ in terms of the proper, well-tempered bias $V_t(s) = V_\gamma(s)$:
+\begin{align*}
+    \beta[F(s)+V_t(s)] &= \gamma\frac{\beta}{1-\gamma}V_t(s) - \gamma\Delta\beta\Delta F_{\gamma t} + \beta V_t(s) \\
+    &= \beta\left[\frac{\gamma}{1-\gamma}+1\right]V_t(s) - \gamma\Delta\beta\Delta F_{\gamma t} \\
+    &= \beta \frac{1}{1-\gamma}V_t(s) - \gamma\Delta\beta\Delta F_{\gamma t} \\
+    &= \Delta\beta V_t(s) - \gamma\Delta\beta\Delta F_{\gamma t}
+\end{align*}
+The time-dependent $\gamma\Delta\beta\Delta F_{\gamma t}$ terms cancel in the partition function ratio, and the PLUMED expression is
+\[
+    \mye^{-\beta c_t} = \frac{Z_t}{Z} = \frac{\int\myd{s}\mye^{-\Delta\beta V_t(s)}}{\int\myd{s}\mye^{-\gamma\Delta\beta V_t(s)}}
+\]
+
+\subsection{Connection to Tiwary, 2015, eq. 19}
+Tiwary's expression is
+\begin{align*}
+    F(s) &= -\left(\frac{\gamma}{\gamma-1}\right)V_t(s) + \frac{1}{\beta}
+    \log\int\myd{s}\mye^{\gamma\Delta\beta V_t(s)} \\
+    \beta F(s) &= +\gamma\Delta\beta V_t(s) + \frac{1}{\beta}
+    \log\int\myd{s}\mye^{\gamma\Delta\beta V_t(s)}
+\end{align*}
+
+
+\appendix
+\input{sec-silvermans-breakdown}
+\input{sec-modern-methods}
+\end{document}
+
+
+
+%% \href{https://www.ferglab.com/}{\color{darkred}Website}
+
+% \usepackage{minted}
+% \begin{minted}[mathescape, linenos]{python}
+%     # Note: $\pi=\lim_{n\to\infty}\frac{P_n}{d}$
+%     title = "Hello World"
+% \end{minted}
+
+%%=======================================================================
+%%     PREFERRED FIGURE/TABLE
+%%=======================================================================
+%%                                 %%-------------------------------------%%
+%% \begin{figure}[h!]              %%  caption right of figure
+%%   \begin{minipage}[c]{0.67\textwidth}
+%%     \includegraphics[width=\textwidth]{imgfile.png}
+%%   \end{minipage}\hfill
+%%   \begin{minipage}[c]{0.3\textwidth}
+%%     \caption{Caption on the right hand side}
+%%     \label{fig:}
+%%   \end{minipage}
+%% \end{figure}
+%%                                 %%-------------------------------------%%
+%% \begin{figure}[h!]\centering    %%  caption below figure
+%%   \includegraphics[width=0.5\textwidth]{imgfile.png}
+%%   \caption{General caption}
+%%   \label{fig:label}
+%% \end{figure}
+%%                                 %%-------------------------------------%%
+%% \begin{figure}[!h]\centering    %%  array of figures with subcaptions
+%%   \subfloat[]{\includegraphics[width=0.5\textwidth]{}}
+%%   \subfloat[]{\includegraphics[width=0.5\textwidth]{}} \\
+%%   \subfloat[]{\includegraphics[width=0.5\textwidth]{}}
+%%   \subfloat[]{\includegraphics[width=0.5\textwidth]{}} \\
+%%   \subfloat[]{\includegraphics[width=0.5\textwidth]{}}
+%%   \subfloat[]{\includegraphics[width=0.5\textwidth]{}}
+%%   \caption{General caption}
+%%   \label{fig:label}
+%% \end{figure}
+%%                                        %%------------------------------%%
+%% \begin{table}[!h]\centering\ra{1.3}    %%  simple table
+%%   \begin{tabular}{@{}rrrr@{}}\toprule
+%%     & $t=0$ & $t=1$ & $t=2$ \\ \midrule
+%%     $c$ & 1 & 2 & 3 \\
+%%     $c$ & 1 & 2 & 3 \\
+%%     \bottomrule
+%%   \end{tabular}
+%%   \caption{Caption}
+%% \end{table}
+%%                                        %%------------------------------%%
+%% \begin{table}[!h]\centering\ra{1.3}    %%  complicated table
+%%   \begin{tabular}{@{}rrrrcrrr@{}}\toprule
+%%     & \multicolumn{3}{c}{$w = 8$} & \phantom{abc}&
+%%     \multicolumn{3}{c}{$w = 16$}\\
+%%     \cmidrule{2-4} \cmidrule{6-8} \cmidrule{10-12}
+%%     & $t=0$ & $t=1$ & $t=2$ && $t=0$ & $t=1$ & $t=2$ \\ \midrule
+%%     \rowcolor[gray]{.95} $c$ & 1 & 2 & 3 && 4 & 5 & 6 \\
+%%     \rowcolor[gray]{1.0} $c$ & 1 & 2 & 3 && 4 & 5 & 6 \\
+%%     \bottomrule
+%%   \end{tabular}
+%%   \caption{Caption}
+%% \end{table}
+
+%%=======================================================================
+%%     OLDER FIGURE/TABLE
+%%=======================================================================
+%% \begin{center}
+%%   \includegraphics[width=0.75\linewidth]{}
+%%   \captionof{figure}{}
+%% \end{center}
+%%
+%% \begin{center}
+%%   \begin{tabular}{rl}
+%%     \includegraphics[width=0.5\linewidth]{} &
+%%     \includegraphics[width=0.5\linewidth]{} \\
+%%     \includegraphics[width=0.5\linewidth]{} &
+%%     \includegraphics[width=0.5\linewidth]{} \\
+%%   \end{tabular}
+%%   \captionof{figure}{}
+%% \end{center}
+%%
+%% \begin{center}
+%%   \begin{tabular}{lll}
+%%     \hline
+%%     A & B & C \\
+%%     \hline
+%%     \hline
+%%     1 & 2 & 3 \\
+%%     \hline
+%%   \end{tabular}
+%%   \captionof{table}{test}
+%% \end{center}

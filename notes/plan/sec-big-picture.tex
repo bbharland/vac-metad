@@ -1,0 +1,58 @@
+\section{Big picture}
+For ES method in (WTMetaD, OPES, \ldots)
+\begin{enumerate}
+    \item Data rich CVs
+    \begin{enumeratec}
+        \item Simulation
+        \item Reweight data
+        \item Measure sampling progress
+        \item Plot sampling progress (different VIZs?)
+        \item Evaluate enhancement metric
+    \end{enumeratec}
+    \item Data poor CVs
+    \begin{itemizec}
+        \item Chicken and egg: how to enhance sampling using poor quality CVs
+        \item How to reweight old data sampled from different bias potential and mix together with new data properly.
+        \item Need a way to evaluate the current quality of CVs realative to the ``known'' data rich CVs.
+    \end{itemizec}
+\end{enumerate}
+
+\subsection{Calculation checklist}
+In order to do the above, need to work out:
+\begin{enumeratec}
+    \item KDE bandwidth issues (accuracy vs. computability) plus fact that CV distributions are NOT Gaussian.  See appendix.
+    \item Can VES solve bandwidth problem entirely?
+    \item Methods of evaluating
+    \begin{itemizec}
+        \item ``Quality'' of FES
+        \item Enhancement metric
+    \end{itemizec}
+\end{enumeratec}
+
+\subsection{Immediate priority}
+\begin{enumerate}
+    \item \textbf{Reweighting, ITRE}.  The weight factors for each frame are split
+    \[
+        W_t(s_t) \equiv A_t B_t
+    \]
+    Where the $A_t$ part is frozen (depends on $V_t(s_t)$) and the $B_t$ term contains the (to solve for) bias factor.  Initially $B_t = 1$.
+    \item \textbf{KDE compression}.  Look carefully at the bias potential expanded over Gaussians
+    \[
+        V_n(s) = \sum_k^n h_h\mye^{-\half\norm{s-s_k}^2}
+    \]
+    When this set of Gaussians is compressed (for the purpose of biased dynamics), how can you use this compressed set of Gaussians to stand in for the KDE representation of the PDF:
+    \[
+        p(s,n) = \frac{\sum_k^n W_k G(s-s_k)}{\sum_k^n W_k}
+    \]
+    This will involve pulling parts of the $h_k$ and combining with the weights.  We will need a way to keep count of how many Gaussians have been merged together during compression (reflected in $h_k$) so that the $B_k$ terms can be initialized properly.
+    \item \textbf{Validating reweighting algorithms}.  Use measure of quality of
+    \begin{enumeratec}
+        \item FES
+        \item PDF
+    \end{enumeratec}
+    \item \textbf{Compare enhancement factors}.  Experiment with a number of ways of measuring ``enhancement''.  Is OPES faster than WTMetaD?  Can we get away with our wide bandwidths in both $V_t(s)$ and $p(s, t)$ and get enhancement boost?
+
+    \emph{i.e.} do the forces which are going to be applied crudely in $s$-space (compared to the sharpeness of the peaks in the true $p(s)$ histogram) succeed in driving the system out of the narrow $F(s)$ wells?  This would be a huge win if they do.
+
+    Otherwise, we're stuck with seeking adaptive methods to work with very narrow Gaussians in certain parts of the space.  See Appendix on Silverman's.
+\end{enumerate}

@@ -1,0 +1,112 @@
+\documentclass{article}
+\usepackage{amsmath,amssymb}
+\usepackage[margin=1in]{geometry}
+
+\begin{document}
+
+If
+\[
+f(x)
+\]
+is smooth over the mass of the Gaussian, then the integral
+\[
+I = \int_{\mathbb R^2} e^{-f(x)} \, \mathcal N(x \mid \mu, \Sigma)\, dx
+\]
+is essentially a Gaussian expectation:
+\[
+I = \mathbb E_{X \sim \mathcal N(\mu,\Sigma)}\!\left[e^{-f(X)}\right].
+\]
+
+The named methods that are commonly used fall into a few buckets:
+
+\section*{(1) Laplace / saddlepoint approximations}
+Write the exponent as
+\[
+g(x) = f(x) + \tfrac12 (x-\mu)^\top \Sigma^{-1}(x-\mu) + \text{const}.
+\]
+Then approximate $g$ by a quadratic around its minimizer $x^*$ (the mode of the unnormalized integrand). This gives a closed-form Gaussian integral and is extremely fast in 2D.
+
+\paragraph{Keywords}
+\begin{itemize}
+  \item Laplace approximation
+  \item saddlepoint approximation
+  \item method of steepest descent
+\end{itemize}
+
+\paragraph{Best use}
+When the integrand is unimodal and close to quadratic over the region that matters.
+
+\section*{2) Delta method / Gaussian Taylor moment expansion}
+Expand \(f(X)\) around \(\mu\):
+\[
+f(X) \approx f(\mu) + \nabla f(\mu)^\top (X-\mu) + \tfrac12 (X-\mu)^\top H(\mu)(X-\mu).
+\]
+Then \(e^{-f(X)}\) becomes the exponential of an affine-quadratic form in a Gaussian, which can be integrated in closed form if the resulting matrix is well-behaved.
+
+\paragraph{Keywords}
+\begin{itemize}
+  \item delta method
+  \item second-order delta method
+  \item Gaussian moment expansion
+  \item Taylor approximation under Gaussian
+\end{itemize}
+
+\section*{3) Gauss--Hermite quadrature in 2D}
+Whiten the Gaussian by writing
+\[
+X = \mu + Lz, \qquad LL^\top = \Sigma,\qquad z \sim \mathcal N(0,I).
+\]
+Then
+\[
+I = \mathbb E_{z \sim \mathcal N(0,I)}\!\left[e^{-f(\mu + Lz)}\right].
+\]
+In 2D, tensor-product Gauss--Hermite quadrature is often very accurate and efficient.
+
+\paragraph{Keywords}
+\begin{itemize}
+  \item Gauss--Hermite quadrature
+  \item Hermite cubature
+  \item Gaussian quadrature for normal expectations
+\end{itemize}
+
+\section*{4) Bayesian quadrature / Gaussian-process quadrature}
+If function evaluations are expensive, Bayesian quadrature models the integrand with a Gaussian process and computes the Gaussian-weighted integral analytically under the posterior.
+
+\paragraph{Keywords}
+\begin{itemize}
+  \item Bayesian quadrature
+  \item Gaussian process quadrature
+  \item probabilistic numerics integration
+  \item WSABI (Warped Sequential Active Bayesian Integration)
+\end{itemize}
+
+\section*{5) Unscented transform / sigma-point methods}
+These methods use a small deterministic set of points to approximate Gaussian expectations.
+
+\paragraph{Keywords}
+\begin{itemize}
+  \item unscented transform
+  \item sigma-point quadrature
+  \item cubature Kalman filter
+  \item spherical-radial cubature
+\end{itemize}
+
+\section*{6) Importance sampling / Monte Carlo}
+Plain Monte Carlo is straightforward, but in 2D deterministic methods are usually preferable if \(f\) is smooth.
+
+\section*{Rule of thumb}
+\begin{itemize}
+  \item \textbf{Fastest analytic approximation:} Laplace or second-order Taylor expansion.
+  \item \textbf{High accuracy in 2D:} Gauss--Hermite quadrature.
+  \item \textbf{Expensive function evaluations:} Bayesian quadrature / WSABI.
+\end{itemize}
+
+\section*{What to try first}
+If \(f\) is smooth and 2D, a very practical first choice is:
+\begin{itemize}
+  \item whiten the Gaussian,
+  \item apply 7--11 point Gauss--Hermite quadrature per dimension,
+  \item compare against Laplace approximation around the mode.
+\end{itemize}
+
+\end{document}

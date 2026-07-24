@@ -1,1 +1,0 @@
-/home/bharland/bin/templates/notes.cls

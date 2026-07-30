@@ -127,14 +127,95 @@
     \]
 \end{itemizec}
 
-\subsection{Continuous time three state system}
+\subsection{Two-state system with transition matrix}
 \begin{itemizec}
-    \item conservation of probability mass for closed system
+    \item rewrite time evolution wrt lag $\tau$ after some arbitrary time $t$
+    \begin{align*}
+        p_0(t+\tau)
+        &= p_0^\mathrm{eq} + \Big[p_0(t) - p_0^\mathrm{eq}\Big]\mye^{-k\tau} \\
+        p_1(t+\tau)
+        &= p_1^\mathrm{eq} + \Big[p_1(t) - p_1^\mathrm{eq}\Big]\mye^{-k\tau}
+    \end{align*}
+    \item for each equation, multiply the second term by
     \[
-        \sum_i p_i(t) = 1
+        1 = p_0(t) + p_1(t)
+    \]
+    \item substitute the definitions of
+    \[
+        p_0^\mathrm{eq} \quad p_1^\mathrm{eq}
+    \]
+    in terms of the rate constants.
+    \item some algebra will lead to an explicit expression for the transition matrix, $T_\tau$, such that
+    \[
+        p(t+\tau) =  T(\tau) p(t)
+    \]
+    with
+    \[
+        T(\tau) = k^{-1}\begin{bmatrix}
+            k_- + k_+\mye^{-k\tau} & k_-(1-\mye^{-k\tau})  \\
+            k_+(1-\mye^{-k\tau}) & k_+ + k_-\mye^{-k\tau}
+        \end{bmatrix}
+    \]
+    being the \emph{left stochastic matrix} and $p(t)$ is the \emph{column vector} of probability.
+\end{itemizec}
+
+\subsection{Transition matrix for multistate systems}
+\begin{itemizec}
+    \item the equation is
+    \[
+        p_i(t+\tau) =  \sum_j T_{ij}(\tau) p_j(t)
+    \]
+    and $T$ is column-stochastic
+    \[
+        \sum_j T_{ij}(\tau) = 1
+    \]
+    with diagonal elements (``self-transitions'')
+    \[
+        T_{ii} = 1 - \sum_{j\ne i}T_{ji}
     \]
 \end{itemizec}
 
+\subsection{Short \& long time limits, two state}
+\begin{itemizec}
+    \item in the short time limit
+    \[
+        \lim_{\tau\rightarrow 0}T(\tau) =
+        \begin{bmatrix}
+            1 - k_+\tau & k_-\tau \\ k_+\tau & 1 - k_-\tau
+        \end{bmatrix}
+    \]
+    \item in the long time limit, the transition matrix preserves equilibrium
+    \[
+        \lim_{\tau\rightarrow \infty}T(\tau) =
+        \begin{bmatrix}
+            k_-/k & k_-/k \\ k_+/k & k_+/k
+        \end{bmatrix}
+    \]
+\end{itemizec}
+
+\subsection{Markovian behaviour}
+\begin{itemizec}
+    \item if you can solve for the elements of a stochatic matrix
+    \[
+        T_{ij}(\tau) = \myP{x_{t+\tau}\in s_i | x_t\in s_j}
+    \]
+    \item the Chapman-Kolmogorov test for Markovianity provides a method for propagating the system to arbitrary multiples of $\tau$
+    \[
+        p(t+k\tau) =  T(\tau)^k p(t)
+    \]
+\end{itemizec}
+
+\section{Probability and kinetics}
+
+Taken from notes \texttt{07.22.cheat\_sheet}.
+Want a place to put main kinetics result, including timescales, first passage times, etc.  Focus is on the two state model, but generalization where appropriate.
+
+\subsection{The rate constant}
+The fundamental definition of the rate constant is
+\[
+    k_{ij} = \lim_{\delta t\rightarrow 0}\frac{1}{\delta t}
+    \myP{x_{t+\delta t} \in s_j|x_t\in s_i}
+\]
 
 % \appendix
 % \input{sec-xxx}

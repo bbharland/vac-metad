@@ -22,8 +22,17 @@ def param_unbiased_weighted():
 
 
 def param_unbiased_vaccuum():
-    """3 us simulation, June 26, 2026"""
+    """15 us simulation, July 3, 2026"""
     return SimulationParameters(working_dir="data/vacuum")
+
+
+def param_unbiased_vaccuum_parrinello():
+    """https://doi.org/10.5281/zenodo.7323535"""
+    return SimulationParameters(
+        working_dir="data/vacuum-parrinello",
+        pdb_file="data/vacuum-parrinello/input.ala2.pdb",
+        simulation_time=87 * unit.microsecond,
+    )
 
 
 def param_unbiased_reference_350():
@@ -83,7 +92,19 @@ class SimulationParameters(DefaultMixin):
         self.replace_defaults(kwargs)
 
         # kT as a float, units of kJ/mol
-        self.kT = kT_in_kJ_per_mol(self.temperature)
+        # self.kT = kT_in_kJ_per_mol(self.temperature) # CHECK OUT BELOW!
+        self.kT = unit.BOLTZMANN_CONSTANT_kB * self.temperature
+        # bharland@bigbear:~/work/vac-metad/src$ grep kT_in_kJ_per_mol *.py
+
+        # param.py:from .util import kT_in_kJ_per_mol
+        # param.py:        # self.kT = kT_in_kJ_per_mol(self.temperature) # CHECK OUT BELOW!
+        # util.py:def kT_in_kJ_per_mol(temperature):
+
+        # bharland@bigbear:~/work/vac-metad$ grep kT_in_kJ_per_mol *.ipynb
+        # test.ipynb:    "kT = kT_in_kJ_per_mol(p.temperature)"
+        # bharland@bigbear:~/work/vac-metad$
+
+
 
         # take one frame per frametime.
         num_frames = self.simulation_time / self.frametime

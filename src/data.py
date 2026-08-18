@@ -299,17 +299,17 @@ class SimulationData(DataHandles):
             features = self.heavy_atom_distances(traj, periodic=periodic)
             self._save_object("features", features)
 
-def _load_trajectory(self, pdbfile=None):
-    """Load this simulation's trajectory, preferring dcd+pdb, then h5, then xtc+pdb."""
-    if pdbfile and self.files["dcdfile"].exists():
-        return md.load_dcd(self.files["dcdfile"], top=pdbfile)
-    if self.files["h5file"].exists():
-        return md.load(self.files["h5file"])
-    if pdbfile and self.files["xtcfile"].exists():
-        return md.load_xtc(self.files["xtcfile"], top=pdbfile)
-    raise FileNotFoundError(
-        "Need either an h5 file, a dcd file plus pdbfile, or an xtc file plus pdbfile"
-    )
+    def _load_trajectory(self, pdbfile=None):
+        """Load this simulation's trajectory, preferring dcd+pdb, then h5, then xtc+pdb."""
+        if pdbfile and self.files["dcdfile"].exists():
+            return md.load_dcd(self.files["dcdfile"], top=pdbfile)
+        if self.files["h5file"].exists():
+            return md.load(self.files["h5file"])
+        if pdbfile and self.files["xtcfile"].exists():
+            return md.load_xtc(self.files["xtcfile"], top=pdbfile)
+        raise FileNotFoundError(
+            "Need either an h5 file, a dcd file plus pdbfile, or an xtc file plus pdbfile"
+        )
 
     @staticmethod
     def heavy_atom_distances(traj, periodic=True):

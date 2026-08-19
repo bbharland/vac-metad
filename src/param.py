@@ -92,24 +92,11 @@ class SimulationParameters(DefaultMixin):
         self.replace_defaults(kwargs)
 
         # kT as a float, units of kJ/mol
-        # self.kT = kT_in_kJ_per_mol(self.temperature) # CHECK OUT BELOW!
-        self.kT = unit.BOLTZMANN_CONSTANT_kB * self.temperature
-        # bharland@bigbear:~/work/vac-metad/src$ grep kT_in_kJ_per_mol *.py
+        kT = unit.MOLAR_GAS_CONSTANT_R * self.temperature
+        self.kT = kT.value_in_unit(unit.kilojoule_per_mole)
 
-        # param.py:from .util import kT_in_kJ_per_mol
-        # param.py:        # self.kT = kT_in_kJ_per_mol(self.temperature) # CHECK OUT BELOW!
-        # util.py:def kT_in_kJ_per_mol(temperature):
-
-        # bharland@bigbear:~/work/vac-metad$ grep kT_in_kJ_per_mol *.ipynb
-        # test.ipynb:    "kT = kT_in_kJ_per_mol(p.temperature)"
-        # bharland@bigbear:~/work/vac-metad$
-
-
-
-        # take one frame per frametime.
+        # take one frame per frametime, and ensure it is a whole number
         num_frames = self.simulation_time / self.frametime
-
-        # simulation must be a perfect multiple of the frametime
         assert np.isclose(
             num_frames, round(num_frames)
         ), "Simulations must be a whole number of frames.  Check simulation_time and frametime"

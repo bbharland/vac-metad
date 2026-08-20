@@ -27,11 +27,23 @@ def param_unbiased_vaccuum():
 
 
 def param_unbiased_vaccuum_parrinello():
-    """https://doi.org/10.5281/zenodo.7323535"""
+    """https://doi.org/10.5281/zenodo.7323535
+    * 300 K, 875,247 frames, 100 ps apart
+    * Force Field: AMBER99SB-ILDN
+    * 30+ back and forth transitions (C_7eq <=> C_7ax)
+    * leaving PBCs on does not cause any problems (check_pbc.py)
+    """
+    working_dir = "data/vacuum-parrinello"
+    xtcfile = Path(working_dir) / "traj.xtc"
+    zenodo_xtcfile = Path(working_dir) / "traj_comp.xtc"
+    if not xtcfile.exists():
+        Path(xtcfile).symlink_to(zenodo_xtcfile)
+
     return SimulationParameters(
-        working_dir="data/vacuum-parrinello",
-        pdb_file="data/vacuum-parrinello/input.ala2.pdb",
-        simulation_time=87 * unit.microsecond,
+        working_dir=working_dir,
+        pdb_file=f"{working_dir}/input.ala2.pdb",
+        simulation_time=87.5247 * unit.microsecond,
+        frametime=100 * unit.picosecond,
     )
 
 
@@ -92,6 +104,8 @@ class SimulationParameters(DefaultMixin):
         self.replace_defaults(kwargs)
 
         # kT as a float, units of kJ/mol
+        #     unit.MOLAR_GAS_CONSTANT_R  => units energy / mole
+        #     unit.BOLTZMANN_CONSTANT_kB => units energy
         kT = unit.MOLAR_GAS_CONSTANT_R * self.temperature
         self.kT = kT.value_in_unit(unit.kilojoule_per_mole)
 

@@ -29,7 +29,9 @@ import torch.nn as nn
 
 from .dataset import (
     TimeLaggedDataset,
+    TrajectoryDataset,
     WeightedTimeLaggedDataset,
+    WeightedTrajectoryDataset,
 )
 from .util import (
     to_torch,
@@ -444,8 +446,14 @@ class WeightedSRV(SRV):
         assert isinstance(dataset, WeightedTimeLaggedDataset), (
             f'ERROR with {type(dataset) = }'
         )
-        x = self._transform_features(dataset.x)
-        y = self._transform_features(dataset.y)
+        if isinstance(dataset, WeightedTrajectoryDataset):
+            # x and y are offset views of one trajectory: transform it once,
+            # then slice.  Exact because the eval-mode net is row-wise.
+            z = self._transform_features(dataset.trajectory)
+            x, y = z[:-dataset.lagframes], z[dataset.lagframes:]
+        else:
+            x = self._transform_features(dataset.x)
+            y = self._transform_features(dataset.y)
         xweights = to_torch(dataset.xweights, device=self.device).double().cpu()
         yweights = to_torch(dataset.yweights, device=self.device).double().cpu()
         mean, c0, c1 = cov_matrices_weighted(x, xweights, y, yweights)

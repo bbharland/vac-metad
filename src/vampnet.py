@@ -458,7 +458,9 @@ class SRV:
         chunks = []
         with torch.no_grad():
             for start in range(0, len(features), batch_size):
-                batch = features[start : start + batch_size].copy()
+                # torch.tensor always copies, so a read-only memmap slice is
+                # fine here -- no intermediate .copy() needed.
+                batch = features[start : start + batch_size]
                 z = self.net(torch.tensor(batch, dtype=torch.float32, device=self.device))
                 chunks.append(z.cpu())
         return torch.cat(chunks, dim=0)

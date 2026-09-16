@@ -3,14 +3,12 @@
 * **No SciPy dependency.**  All linear algebra now goes through ``torch.linalg``.
 
 * **Float precision policy.**  The network runs in ``float32``; promotion to
-  ``float64`` happens inside ``cov_matrices`` / ``cov_matrices_weighted``, at the
-  boundary where per-frame values become a sum over frames.  That is where
+  ``float64`` happens inside ``cov_matrices`` / ``cov_matrices_weighted``, at the boundary where per-frame values become a sum over frames.  That is where
   precision is actually lost: summing ~1e6 float32 terms costs ~1e-5 relative
   error in ``c0``, which the near-singular whitening then amplifies by the
-  condition number.  The 6x6 ``eigh`` was never the weak link -- it inherits
-  ``float64`` from ``c0`` as a free consequence.  The same rule holds in both
-  regimes: minibatch covariances during training (on device) and whole-dataset
-  covariances at fit time (on CPU).
+  condition number.  This is the weak link in resolving near-singular eigenvalues, not the precision of the 6x6 Koopman matrix into eigh.
+
+* **Rank-aware whitening.**
 """
 
 import copy
@@ -27,7 +25,6 @@ from .dataset import (
     WeightedTrajectoryDataset,
 )
 from .util import (
-    to_torch,
     torch_device,
     module_device,
 )
@@ -462,7 +459,7 @@ class SRV:
         with torch.no_grad():
             for start in range(0, len(features), batch_size):
                 batch = features[start : start + batch_size].copy()
-                z = self.net(to_torch(batch, device=self.device))
+                z = self.net(torch.tensor(batch, dtype=torch.float32, device=self.device))
                 chunks.append(z.cpu())
         return torch.cat(chunks, dim=0)
 
@@ -517,8 +514,8 @@ class SRV:
         module to CPU does NOT mutate ``self.net`` (which may live on the GPU).
         """
         # drop back to float32
-        W = to_torch(self.transform_matrix[:, :num_cvs]).float()
-        b = -to_torch((self.mean @ self.transform_matrix)[:num_cvs]).float()
+        W = torch.tensor(self.transform_matrix[:, :num_cvs], dtype=torch.float32)
+        b = -torch.tensor((self.mean @ self.transform_matrix)[:num_cvs], dtype=torch.float32)
 
         # torch convention for a linear layer: y = x W' + b
         eig_layer = nn.Linear(self.num_eigvecs, num_cvs)
@@ -555,8 +552,8 @@ class WeightedSRV(SRV):
             x = self._transform_features(dataset.x)
             y = self._transform_features(dataset.y)
 
-        xweights = to_torch(dataset.xweights, dtype=None)
-        yweights = to_torch(dataset.yweights, dtype=None)
+        xweights = torch.tensor(dataset.xweights)
+        yweights = torch.tensor(dataset.yweights)
         mean, c0, c1 = cov_matrices_weighted(x, xweights, y, yweights)
         self._solve(mean, c0, c1, epsilon=epsilon, mode=mode)
         return self

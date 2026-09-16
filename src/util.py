@@ -9,29 +9,10 @@ from pathlib import Path
 import sys
 import time
 
+
 # --------------------------------------------------------------------------- #
 #  Torch Utility/Convenience Functions
 # --------------------------------------------------------------------------- #
-
-
-def to_torch(a, device=None, dtype=torch.float32):
-    """Send array to torch.Tensor. The intention is for a single utility function to handle this everywhere.
-
-    dtype defaults to float32, the network's working precision -- so features
-    are narrowed on the way in whatever the array's own dtype.  Pass
-    dtype=None to preserve it instead, which is required for quantities where
-    float32 would lose information (e.g. reweighting factors, whose ~7-digit
-    mantissa would otherwise quantise every weight by ~6e-8 relative).
-
-    torch.tensor():
-        * takes array-like 'a'
-        * always copies
-        * device defaults to CPU (unless changed by torch.set_default_device)
-        * dtype would default to the type of 'a' for numpy arrays -- overridden
-          by the parameter above
-    """
-    return torch.tensor(a, dtype=dtype, device=device)
-
 
 def torch_device(loud=True):
     if loud:

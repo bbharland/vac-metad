@@ -6,7 +6,6 @@ from openmm.app import PDBFile
 import mdtraj as md
 
 from .gaussians import Gaussians
-from .util import to_torch
 
 
 class SimulationCVS:
@@ -41,7 +40,7 @@ class SimulationCVS:
         return self.xyz_to_cvs(net, xyz)
 
     def xyz_to_cvs(self, net, xyz):
-        positions = to_torch(xyz[self.ala_atoms])
+        positions = torch.tensor(xyz[self.ala_atoms], dtype=torch.float32)
         x = self.featurize(positions)
         return net(x).numpy().flatten()
 
@@ -52,7 +51,7 @@ class SimulationCVS:
         ]).unsqueeze(0)
 
 
-def metadynamics(temperature, bias_factor, height, width):
+def metadynamics(temperature, gr_factor, height, width):
     """Deal with units and return a Metadynamics object.
 
     Parameters

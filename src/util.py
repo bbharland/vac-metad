@@ -117,7 +117,7 @@ def bias_from_module(simulation, module, device=None):
     if device is None:
         device = module_device(module.net)
     r = simulation.context.getState(getPositions=True).getPositions()
-    w = module(torch.tensor(r._value).to(device=device))
+    w = module(torch.tensor(r.value_in_unit(unit.nanometer), dtype=torch.float32, device=device))
     return w.cpu().item()
 
 

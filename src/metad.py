@@ -36,7 +36,7 @@ class SimulationCVS:
 
     def sim_cvs(self, net, simulation):
         state = simulation.context.getState(getPositions=True)
-        xyz = np.array(state.getPositions()._value)
+        xyz = state.getPositions(asNumpy=True).value_in_unit(unit.nanometer)
         return self.xyz_to_cvs(net, xyz)
 
     def xyz_to_cvs(self, net, xyz):

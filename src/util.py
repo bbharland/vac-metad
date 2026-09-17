@@ -102,7 +102,9 @@ def get_energy_dict(system, simulation):
     energy = {}
     for i, f in enumerate(system.getForces()):
         state = simulation.context.getState(getEnergy=True, groups={i})
-        energy[f.getName()] = state.getPotentialEnergy()._value
+        energy[f.getName()] = state.getPotentialEnergy().value_in_unit(
+            unit.kilojoule_per_mole
+        )
     return energy
 
 
@@ -135,7 +137,9 @@ def bias_from_context_units(simulation, force_group_id):
 
 
 def bias_from_context(simulation, force_group_id):
-    return bias_from_context_units(simulation, force_group_id)._value
+    return bias_from_context_units(simulation, force_group_id).value_in_unit(
+        unit.kilojoule_per_mole
+    )
 
 
 def kT_in_kJ_per_mol(temperature):

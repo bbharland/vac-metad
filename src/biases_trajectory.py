@@ -22,19 +22,12 @@ from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 
-try:  # progress bar is optional
-    from tqdm.auto import tqdm
-except ImportError:  # pragma: no cover
-
-    def tqdm(iterable, **kwargs):
-        return iterable
-
-
-from src.kernel import gaussian2d
+from .kernel import gaussian2d
+from .progress import progress
 
 
 def biases_trajectory(
-    gaussians, dispatch="serial", num_frames=None, use_tqdm=True, workers=6, block=512
+    gaussians, dispatch="serial", num_frames=None, usetqdm=True, workers=6, block=512
 ):
     """Compute the Metadynamics bias potential over a trajectory of Gaussians.
 
@@ -55,6 +48,18 @@ def biases_trajectory(
             "threadpool"  numpy across ``workers`` threads. ~1.5x on a 6-core
                           laptop -- bandwidth/thermal bound, not a big win.
             "cupy"        GPU, tiled. ~33x on the reference machine.
+    num_frames : int or None
+        Compute only the first ``num_frames`` frames.  Currently honoured by
+        the "serial" backend only; ignored by "threadpool" and "cupy".
+    usetqdm : bool
+        Show a tqdm progress bar.  Pass ``False`` for batch jobs; see
+        :mod:`src.progress`.  What the bar counts differs by backend: source
+        Gaussians ("serial"), workers completing ("threadpool"), or tiles
+        ("cupy").
+    workers : int
+        Thread count for the "threadpool" backend.  Ignored otherwise.
+    block : int
+        Source-block size for the "cupy" backend.  Ignored otherwise.
 
     Returns
     -------
@@ -70,7 +75,7 @@ def biases_trajectory(
     match dispatch:
         case "serial":
             return biases_trajectory_serial(
-                gaussians, num_frames=num_frames, use_tqdm=use_tqdm
+                gaussians, num_frames=num_frames, usetqdm=usetqdm
             )
         case "threadpool":
             # Pin the math backend to one thread per worker: otherwise each of
@@ -80,9 +85,11 @@ def biases_trajectory(
             from threadpoolctl import threadpool_limits
 
             with threadpool_limits(limits=1):
-                return biases_trajectory_threadpool(gaussians, workers=workers)
+                return biases_trajectory_threadpool(
+                    gaussians, usetqdm=usetqdm, workers=workers
+                )
         case "cupy":
-            return biases_trajectory_cupy(gaussians, block=block)
+            return biases_trajectory_cupy(gaussians, usetqdm=usetqdm, block=block)
         case _:
             raise ValueError(
                 f"{dispatch=} not implemented; "
@@ -90,15 +97,18 @@ def biases_trajectory(
             )
 
 
-def biases_trajectory_serial(gaussians, num_frames=None, use_tqdm=True):
-    """Serial numpy.  If num_frames is not None, only compute that many frames found in 'gaussians'.  use_tqdm=True gives tqdm progress bar.
+def biases_trajectory_serial(gaussians, num_frames=None, usetqdm=True):
+    """Serial numpy.  If num_frames is not None, only compute that many frames found in 'gaussians'.  usetqdm=True gives tqdm progress bar.
     """
     if num_frames is None:
         num_frames = len(gaussians)
 
-    enum_params = enumerate(gaussians[: num_frames - 1])
-    if use_tqdm:
-        enum_params = tqdm(enum_params, total=num_frames - 1)
+    enum_params = progress(
+        enumerate(gaussians[: num_frames - 1]),
+        usetqdm,
+        total=num_frames - 1,
+        desc="biases (serial)",
+    )
 
     cvs = gaussians.centers
     biases = np.zeros(num_frames)
@@ -110,8 +120,15 @@ def biases_trajectory_serial(gaussians, num_frames=None, use_tqdm=True):
     return biases
 
 
-def biases_trajectory_threadpool(gaussians, workers=6):
-    """ """
+def biases_trajectory_threadpool(gaussians, usetqdm=True, workers=6):
+    """Threaded numpy.  Each worker takes a round-robin stride through the
+    source Gaussians and accumulates its own partial bias array; the partials
+    are summed at the end.
+
+    The progress bar counts *workers completing*, not Gaussians, so with the
+    default ``workers=6`` it advances six times.  A finer bar would need the
+    threads to share a counter, which is not worth the contention here.
+    """
     from concurrent.futures import ThreadPoolExecutor
 
     num_frames = len(gaussians)
@@ -127,13 +144,20 @@ def biases_trajectory_threadpool(gaussians, workers=6):
         return out
 
     if workers <= 1:
+        workers = 1  # `partial` strides by this; 0 or negative would misbehave
         return partial(0)
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        return np.sum(list(ex.map(partial, range(workers))), axis=0)
+        partials = progress(
+            ex.map(partial, range(workers)),
+            usetqdm,
+            total=workers,
+            desc="biases (threadpool)",
+        )
+        return np.sum(list(partials), axis=0)
 
 
-def biases_trajectory_cupy(gaussians, block=512):
+def biases_trajectory_cupy(gaussians, usetqdm=True, block=512):
     """GPU lower-triangular all-pairs Gaussian sum.
 
     Tiles the N x N triangular problem over blocks of ``block`` source
@@ -148,6 +172,10 @@ def biases_trajectory_cupy(gaussians, block=512):
 
     Parameters
     ----------
+    usetqdm : bool, optional
+        Progress bar over source tiles.  Note cupy queues work asynchronously,
+        so the bar tracks kernel *launches*, not completions -- it will run
+        ahead and then stall at the end while the device drains.
     block : int, optional
         Source-block size. Memory/speed knob: the early tiles are ``block x N``,
         so this caps peak VRAM. Lower it on OutOfMemoryError; raise it (1024,
@@ -171,8 +199,8 @@ def biases_trajectory_cupy(gaussians, block=512):
     else:  # robust fallback: pull scalars once
         H = np.empty(N, np.float32)
         W = np.empty((N, 2), np.float32)
-        for i in range(N):
-            h, c, w = gaussians[i]
+        for i in progress(range(N), usetqdm, desc="gathering (h, w)"):
+            h, _, w = gaussians[i]
             H[i] = h
             W[i] = np.asarray(w).reshape(2)
 
@@ -183,14 +211,17 @@ def biases_trajectory_cupy(gaussians, block=512):
     Hg = cp.asarray(H)
     biases = cp.zeros(N, dtype=cp.float64)  # accumulate in f64
 
-    for i0 in range(0, N - 1, block):
+    tiles = progress(
+        range(0, N - 1, block),
+        usetqdm,
+        total=-(-(N - 1) // block),
+        desc="biases (cupy)",
+    )
+    for i0 in tiles:
         i1 = min(i0 + block, N - 1)  # sources i0..i1-1
         B = i1 - i0
         # targets: global k in [i0, N); column c -> global k = i0 + c
         dx = (Cx[i0:][None, :] - Cx[i0:i1, None]) / Wx[i0:i1, None]  # (B, N-i0)
         dy = (Cy[i0:][None, :] - Cy[i0:i1, None]) / Wy[i0:i1, None]
         G = Hg[i0:i1, None] * cp.exp(-0.5 * (dx * dx + dy * dy))  # (B, N-i0)
-        G[:, :B] = cp.triu(G[:, :B], k=1)  # keep k > i in the diagonal block
-        biases[i0:] += G.sum(axis=0, dtype=cp.float64)
-
-    return cp.asnumpy(biases)
+        G[:,

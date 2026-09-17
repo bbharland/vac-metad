@@ -28,6 +28,8 @@ from .util import (
     torch_device,
     module_device,
 )
+from .progress import progress
+
 
 # Threshold for deciding a covariance direction is unresolvable.  This is a
 # *statistical* threshold, not a numerical one: it asks whether a direction
@@ -303,9 +305,13 @@ class VAMPNet:
     def test_scores(self):
         return np.array(self._test_scores)
 
-    def fit(self, data_loader_train, data_loader_test, num_epochs=1, progress=None):
+    def fit(self, data_loader_train, data_loader_test, num_epochs=1, usetqdm=True):
         for epoch in progress(
-            range(num_epochs), desc="VAMPnet epoch", total=num_epochs, leave=False
+            range(num_epochs),
+            usetqdm,
+            desc="VAMPnet epoch",
+            total=num_epochs,
+            leave=False,
         ):
             # training
             self.net.train()
@@ -342,9 +348,13 @@ class WeightedVAMPNet(VAMPNet):
     def __init__(self, net, device, learning_rate, loss_method):
         super().__init__(net, device, learning_rate, loss_method)
 
-    def fit(self, data_loader_train, data_loader_test, num_epochs=1, progress=None):
+    def fit(self, data_loader_train, data_loader_test, num_epochs=1, usetqdm=True):
         for epoch in progress(
-            range(num_epochs), desc="VAMPnet epoch", total=num_epochs, leave=False
+            range(num_epochs),
+            usetqdm,
+            desc="VAMPnet epoch",
+            total=num_epochs,
+            leave=False,
         ):
             # training
             self.net.train()
@@ -515,6 +525,13 @@ class SRV:
         A deep copy of the feature network is used so that moving the returned
         module to CPU does NOT mutate ``self.net`` (which may live on the GPU).
         """
+        if self.rank is not None and num_cvs > self.rank:
+            raise ValueError(
+                f"num_cvs={num_cvs} exceeds the resolvable rank of c0 "
+                f"({self.rank}).  CVs beyond the rank are numerical noise "
+                f"(~1e-24); biasing along them is meaningless."
+            )
+
         # drop back to float32
         W = torch.tensor(self.transform_matrix[:, :num_cvs], dtype=torch.float32)
         b = -torch.tensor((self.mean @ self.transform_matrix)[:num_cvs], dtype=torch.float32)

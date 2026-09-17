@@ -21,12 +21,7 @@ import numpy as np
 from functools import partial
 
 from .grid2d import compute_grid2d
-
-try:                                      # progress bar is optional
-    from tqdm.auto import tqdm
-except ImportError:                       # pragma: no cover
-    def tqdm(iterable, **kwargs):
-        return iterable
+from .progress import progress
 
 
 def _sum_at_points(points, heights, centers, widths):
@@ -275,7 +270,7 @@ class Gaussians:
         return float(np.mean(self.evaluate(pts)))
 
     # ---- compression (greedy moment-matching merge) ------------------
-    def compressed(self, dist_threshold=1.0, loud=True):
+    def compressed(self, dist_threshold=1.0, usetqdm=True):
         """Return a new Gaussians with nearby kernels merged.
 
         Greedy and inherently sequential; O(N * surviving_kernels).  Each merge
@@ -290,11 +285,12 @@ class Gaussians:
         https://journals.aps.org/prx/abstract/10.1103/PhysRevX.10.041034
         """
         merged = []
-        params = zip(self.heights, self.centers, self.widths)
-        if loud:
-            params = tqdm(params, total=len(self))
-
-        for h, c, w in params:
+        for h, c, w in progress(
+            zip(self.heights, self.centers, self.widths),
+            usetqdm,
+            total=len(self),
+            desc="compressing",
+        ):
             gn = Gaussian(h, c, w)
             while True:
                 if not merged:

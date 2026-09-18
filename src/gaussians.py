@@ -260,19 +260,6 @@ class Gaussians:
         self.heights = self.heights / self.norm()
         return self
 
-    # ---- Parrinello normalization-factor estimators (Z_n) ------------
-    def norm_factor_mc(self):
-        """Monte-Carlo Z estimate: mean of self evaluated at its own centers.
-        2020-parrinello-opes-si, Eq. (S9).
-        """
-        return float(np.mean(self.evaluate(self.centers)))
-
-    def norm_factor_quad(self, x, y, hist):
-        """Quadrature Z estimate over occupied grid cells (hist > 0)."""
-        ix, iy = np.where(hist > 0)
-        pts = np.column_stack([np.asarray(x)[ix], np.asarray(y)[iy]])
-        return float(np.mean(self.evaluate(pts)))
-
     # ---- compression (greedy moment-matching merge) ------------------
     def compressed(self, dist_threshold=1.0, usetqdm=True, renormalize=False):
         """Reference: Supplementary Information for M. Invernizzi, P. M. Piaggi,

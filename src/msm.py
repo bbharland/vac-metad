@@ -69,13 +69,13 @@ def transition_counts_matrix(states, lagframes=1):
     """
     # REVIEW: `lagframes=0` silently returns an all-zero matrix, because
     # states[:-0] == states[:0] == empty. Guard it.
-    assert lagframes >= 1, f'lagframes must be >= 1, got {lagframes}'
+    if lagframes < 1:
+        raise ValueError(f'lagframes must be >= 1, got {lagframes}')
 
     unique = np.unique(states)
     num_states = len(unique)
-    assert np.all(unique == np.arange(1, num_states + 1)), (
-        f'states must be in range [1, num_states] & all states must be present'
-    )
+    if np.all(unique != np.arange(1, num_states + 1)):
+        raise ValueError(f'states must be in range [1, num_states] & all states must be present')
 
     # REVIEW: vectorised the count loop. For MD trajectories with millions of
     # frames the pure-Python loop dominates. This flattens each (from, to) pair
@@ -173,9 +173,9 @@ def mfpt_matrix(T, pi, lagtime):
     lagtime : float
         The lagtime.  Whatever units will be used by M
     """
-    assert T.shape[0] == T.shape[1] == len(pi), (
-        f'Size mismatch: {T.shape = }, {len(pi) = }'
-    )
+    if T.shape[0] != T.shape[1] or T.shape[0] != len(pi):
+        raise ValueError(f"Size mismatch: {T.shape = }, {len(pi) = }")
+
     zero = np.zeros(T.shape)
     eye = np.eye(len(pi))
 

@@ -55,7 +55,9 @@ class TimeLaggedDataset(torch.utils.data.Dataset):
         x : ndarray with shape (num_frames - lagframes, num_features)
         y : ndarray with shape (num_frames - lagframes, num_features)
         """
-        assert len(x) == len(y), f"Length mistmatch: {len(x)=} != {len(y)=}"
+        if len(x) != len(y):
+            raise ValueError(f"Length mistmatch: {len(x)=} != {len(y)=}")
+
         self.x = x
         self.y = y
 
@@ -110,10 +112,14 @@ class TrajectoryDataset(TimeLaggedDataset):
         lagframes : int
             Number of simulation frames separating transition
         """
-        assert lagframes > 0, "lagframes must be positive"
-        assert len(trajectory) > lagframes, "Not enough data to for lagtime"
+        if lagframes <= 0:
+            raise ValueError("lagframes must be positive")
+        if len(trajectory) <= lagframes:
+            raise ValueError("Not enough data to for lagtime")
+
         self.lagframes = lagframes
         self.trajectory = trajectory
+
         super().__init__(trajectory[:-lagframes], trajectory[lagframes:])
 
 
@@ -126,9 +132,13 @@ class WeightedTimeLaggedDataset(torch.utils.data.Dataset):
         x, y : arrays with shape (num_frames - lagframes, num_features)
         xweights, yweights : arrays with shape (num_frames - lagframes,)
         """
-        assert x.shape == y.shape, f"Shape mismatch: {x.shape} != {y.shape}"
-        assert len(xweights) == len(x), f"Size mismatch: {len(xweights)} != {len(x)}"
-        assert len(yweights) == len(x), f"Size mismatch: {len(yweights)} != {len(x)}"
+        if x.shape != y.shape:
+            raise ValueError(f"Shape mismatch: {x.shape} != {y.shape}")
+        if len(xweights) != len(x):
+            raise ValueError(f"Size mismatch: {len(xweights)} != {len(x)}")
+        if len(yweights) != len(x):
+            raise ValueError(f"Size mismatch: {len(yweights)} != {len(x)}")
+
         self.x = x
         self.xweights = xweights
         self.y = y
@@ -185,11 +195,13 @@ class WeightedTrajectoryDataset(WeightedTimeLaggedDataset):
         lagframes : int
             Number of simulation (.h5) frames separating transition
         """
-        assert lagframes > 0, "lagframes must be positive"
-        assert len(trajectory) > lagframes, "Not enough data to for lagtime"
-        assert len(weights) == len(
-            trajectory
-        ), f"Length mismatch: {len(weights)} != {len(trajectory)}"
+        if lagframes <= 0:
+            raise ValueError("lagframes must be positive")
+        if len(trajectory) < lagframes:
+            raise ValueError("Not enough data to for lagtime")
+        if len(weights) != len(trajectory):
+            raise ValueError(f"Length mismatch: {len(weights)} != {len(trajectory)}")
+
         self.lagframes = lagframes
         self.weights = weights
         self.trajectory = trajectory

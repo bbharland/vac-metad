@@ -89,9 +89,11 @@ def get_force_group_name(system, force_group_id):
 
 
 def check_force_group(system, force_group_id):
-    assert (
-        get_force_group_name(system, force_group_id) == "TorchForce"
-    ), "Force group id assigned to something other than TorchForce!"
+    name = get_force_group_name(system, force_group_id)
+    if name != "TorchForce":
+        raise ValueError(
+            f"Force group {force_group_id} is assigned to {name!r}, not TorchForce"
+        )
 
 
 def get_energy_dict(system, simulation):
@@ -143,7 +145,11 @@ def bias_from_context(simulation, force_group_id):
 
 
 def kT_in_kJ_per_mol(temperature):
-    assert unit.is_quantity(temperature), "temperature must be a unit in K"
+    if not (unit.is_quantity(temperature) and temperature.unit.is_compatible(unit.kelvin)):
+        raise TypeError(
+            f"temperature must be an openmm Quantity with temperature units, "
+            f"got {temperature}"
+        )
     kT = unit.MOLAR_GAS_CONSTANT_R * temperature
     return kT / (unit.kilojoule / unit.mole)
 
@@ -225,14 +231,17 @@ def sample_array_rows(a, sample_size):
     sample_size : int
         The number of random samples to be returned.
     """
-    assert (
-        len(a) >= sample_size
-    ), f"ERROR: can't sample {sample_size} rows from array with shape {a.shape}"
+    if len(a) < sample_size:
+        raise ValueError(
+            f"Can't sample {sample_size} rows from array with shape {a.shape}"
+        )
     return a[np.random.choice(len(a), sample_size, replace=False)]
 
 
 def sizeof(obj, units="kB", loud=False):
-    assert units in ("kB", "MB", "GB"), f"Can't do unit {units}"
+    if units not in ("kB", "MB", "GB"):
+        raise ValueError(f"Can't do unit {units}")
+
     BYTE_TO_KB = 1 / 1024
 
     def size_units(size_kb, units):
@@ -289,7 +298,9 @@ def print_status_file(file, num_chars=None):
     num_chars : int
         The total number of character reserved for the file name.  The date modified appears after this many characters.  If None, use 4 spaces after the file name.
     """
-    assert isinstance(file, Path), "'file' needs to be of type 'Path'"
+    if not isinstance(file, Path):
+        raise TypeError("'file' needs to be of type 'Path'")
+
     if num_chars is None:
         whitespace = " " * 4
     else:

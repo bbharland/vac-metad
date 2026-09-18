@@ -51,7 +51,7 @@ class SimulationCVS:
         ]).unsqueeze(0)
 
 
-def metadynamics(temperature, gr_factor, height, width):
+def metadynamics(temperature, bias_factor, height, width):
     """Deal with units and return a Metadynamics object.
 
     Parameters
@@ -65,12 +65,16 @@ def metadynamics(temperature, gr_factor, height, width):
     width : np.ndarray with shape (num_cvs,)
         The Gaussian widths along the direction of each CV.
     """
-    assert unit.is_quantity(temperature), "temperature must be a unit in K"
-    assert bias_factor > 1, f"{bias_factor = } must be greater than 1"
-    assert unit.is_quantity(height), "height must be a unit"
-    assert (
-        isinstance(width, np.ndarray) and width.ndim == 1
-    ), "width must be 1d np.ndarray"
+    if not (unit.is_quantity(temperature) and temperature.unit == unit.kelvin):
+        raise TypeError(f"temperature must be in kelvin, got {temperature}")
+    if bias_factor <= 1:
+        raise ValueError(f"{bias_factor = } must be greater than 1")
+    if not unit.is_quantity(height):
+        raise TypeError("height must be a unit")
+    if not isinstance(width, np.ndarray):
+        raise TypeError(f"width must be a 1d np.ndarray, got {type(width).__name__}")
+    if width.ndim != 1:
+        raise ValueError(f"width must be 1d, got {width.ndim}d with shape {width.shape}")
     deltaT = temperature * (bias_factor - 1)
     betap = 1 / (unit.MOLAR_GAS_CONSTANT_R * deltaT)
     betap = betap / (unit.mole / unit.kilojoule)
@@ -126,10 +130,9 @@ class Metadynamics:
         Everything deposited after this call is the current step's contribution
         (see ``step_deposits``).
         """
-        assert gaussians.dim == len(self._width), (
-            f"CV-dimension mismatch: gaussians.dim={gaussians.dim}, "
-            f"expected {len(self._width)}"
-        )
+        if gaussians.dim != len(self._width):
+            raise ValueError(f"CV-dimension mismatch: gaussians.dim={gaussians.dim}, expected {len(self._width)}")
+
         self.gaussians = gaussians
         self._step_start = len(gaussians)
 
@@ -205,7 +208,8 @@ class Metadynamics:
         ForceModule
             The module to be compiled and added to the simulation.
         """
-        assert len(self) > 0, "Can't deal with empty metad object"
+        if len(self) <= 0:
+            raise ValueError("Can't deal with empty metad object")
 
         dtype = torch.float32
         width = torch.tensor(self._width, dtype=dtype).unsqueeze(0)

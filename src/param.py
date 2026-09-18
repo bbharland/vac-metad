@@ -111,11 +111,10 @@ class SimulationParameters(DefaultMixin):
 
         # take one frame per frametime, and ensure it is a whole number
         num_frames = self.simulation_time / self.frametime
-        assert np.isclose(
-            num_frames, round(num_frames)
-        ), "Simulations must be a whole number of frames.  Check simulation_time and frametime"
-        self.num_frames = round(num_frames)
+        if not np.isclose(num_frames, round(num_frames)):
+            raise ValueError("Simulations must be a whole number of frames.  Check simulation_time and frametime")
 
+        self.num_frames = round(num_frames)
         self.timesteps_per_frame = round(self.frametime / self.timestep)
 
         # assuming we always report once per frame

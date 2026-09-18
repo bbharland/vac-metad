@@ -16,7 +16,7 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
-from gaussians import Gaussian, Gaussians, WeightedGaussians
+from .gaussians import Gaussian, Gaussians, WeightedGaussians
 
 TWO_PI = 2 * np.pi
 
@@ -254,7 +254,7 @@ class TestCompression:
     def test_matches_reference(self, seed, threshold):
         rng = np.random.default_rng(seed)
         g = random_set(60, rng)
-        out = g.compressed(dist_threshold=threshold, loud=False)
+        out = g.compressed(dist_threshold=threshold, usetqdm=False)
         ref_h, ref_c, ref_w = kde_compression_reference(
             g.heights, g.centers, g.widths, dist_threshold=threshold
         )
@@ -266,19 +266,19 @@ class TestCompression:
         # every merge does h = h1 + h2, so sum of heights is invariant
         rng = np.random.default_rng(3)
         g = random_set(80, rng)
-        out = g.compressed(dist_threshold=1.5, loud=False)
+        out = g.compressed(dist_threshold=1.5, usetqdm=False)
         assert out.heights.sum() == pytest.approx(g.heights.sum())
         assert len(out) <= len(g)
 
     def test_tiny_threshold_keeps_all_kernels(self):
         rng = np.random.default_rng(4)
         g = random_set(30, rng)  # distinct centers
-        out = g.compressed(dist_threshold=1e-9, loud=False)
+        out = g.compressed(dist_threshold=1e-9, usetqdm=False)
         assert len(out) == len(g)
         npt.assert_allclose(np.sort(out.heights), np.sort(g.heights))
 
     def test_huge_threshold_collapses_to_one(self, simple_set):
-        out = simple_set.compressed(dist_threshold=1e6, loud=False)
+        out = simple_set.compressed(dist_threshold=1e6, usetqdm=False)
         assert len(out) == 1
         assert out.heights[0] == pytest.approx(simple_set.heights.sum())
 
@@ -367,7 +367,7 @@ class TestWeightedAddition:
 class TestWeightedCompress:
     def test_returns_weighted_and_keeps_wsum(self):
         wg = random_set(40, np.random.default_rng(10), kind="weighted")
-        out = wg.compressed(dist_threshold=1.5, loud=False)
+        out = wg.compressed(dist_threshold=1.5, usetqdm=False)
         assert isinstance(out, WeightedGaussians)
         assert out.wsum == pytest.approx(wg.wsum)
 

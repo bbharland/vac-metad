@@ -270,19 +270,28 @@ class Gaussians:
         return float(np.mean(self.evaluate(pts)))
 
     # ---- compression (greedy moment-matching merge) ------------------
-    def compressed(self, dist_threshold=1.0, usetqdm=True):
-        """Return a new Gaussians with nearby kernels merged.
-
-        Greedy and inherently sequential; O(N * surviving_kernels).  Each merge
-        is the OPES height-weighted moment match (see ``Gaussian.__add__``):
-        exact for the mean/covariance only while merged kernels share a
-        width-product, and it never conserves the analytical norm -- so callers
-        must ``renormalize()`` afterward to restore norm() == 1.
-
-        Reference: Supplementary Information for M. Invernizzi, P. M. Piaggi,
+    def compressed(self, dist_threshold=1.0, usetqdm=True, renormalize=False):
+        """Reference: Supplementary Information for M. Invernizzi, P. M. Piaggi,
         and M. Parrinello, "Unified Approach to Enhanced Sampling",
         Phys. Rev. X 10, 041034 (2020).
         https://journals.aps.org/prx/abstract/10.1103/PhysRevX.10.041034
+
+        Parameters
+        ----------
+        dist_threshold : float, optional
+            Merge radius in Mahalanobis units.  Default 1.0 (the OPES recommendation).
+        usetqdm : bool, optional
+            Show a progress bar over the input kernels.
+        renormalize : bool, optional
+            Rescale heights so ``norm() == 1`` before returning.  (Parrinello's merge formula preserves heights but not widths/mass.)  Leave False
+            when a normalisation factor (Z_n) is computed downstream, since
+            that already absorbs the compression drift.
+
+        Returns
+        -------
+        Gaussians
+            The merged kernels, fewer than the input and in no particular
+            order.
         """
         merged = []
         for h, c, w in progress(
@@ -303,11 +312,15 @@ class Gaussians:
                     break
                 gn = gn + merged.pop(idx)
 
-        return Gaussians(
+        gs = Gaussians(
             np.stack([g.h for g in merged]),
             np.vstack([g.c for g in merged]),
             np.vstack([g.w for g in merged]),
         )
+        if renormalize:
+            return gs.renormalize()
+        else:
+            return gs
 
     # ---- persistence (.npz) ------------------------------------------
     # Arrays only -> no scipy/torch/class needed to read the file back, in any
@@ -462,9 +475,11 @@ class WeightedGaussians(Gaussians):
         return self if (other is None or other == 0) else self.__add__(other)
 
     # ---- compressed: keep it a WeightedGaussians, carry wsum forward ----
-    def compressed(self, dist_threshold=1.0, loud=True):
-        g = super().compressed(dist_threshold=dist_threshold, loud=loud)
-        return WeightedGaussians(g.heights, g.centers, g.widths, wsum=self.wsum)
+    def compressed(self, dist_threshold=1.0, usetqdm=True, renormalize=False):
+        g = super().compressed(
+            dist_threshold=dist_threshold, usetqdm=usetqdm, renormalize=renormalize
+        )
+        return type(self)(g.heights, g.centers, g.widths, wsum=self.wsum)
 
     # ---- persistence: also carry wsum (omitted from the file if None) ----
     def _npz_arrays(self):

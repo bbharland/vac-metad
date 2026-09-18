@@ -394,7 +394,8 @@ class WeightedGaussians(Gaussians):
     @staticmethod
     def _from_arrays(template, heights, centers, widths):
         # preserve wsum on slicing (note: slicing changes the implied weights)
-        return WeightedGaussians(heights, centers, widths, wsum=template.wsum)
+        # type(template) is used since KDE inherits from WeightedGaussian
+        return type(template)(heights, centers, widths, wsum=template.wsum)
 
     # ---- derived statistical quantities ------------------------------
     @property

@@ -73,7 +73,10 @@ class KDE(WeightedGaussians):
         return float(np.mean(self.evaluate(self.centers)))
 
     def norm_factor_quad(self, x, y, hist):
-        """Quadrature Z estimate over occupied grid cells (hist > 0)."""
+        """Quadrature Z estimate over occupied grid cells (hist > 0).
+
+        TODO: check that this is indeed the correct evaluation by quadrature.  Claude says no.
+        """
         ix, iy = np.where(hist > 0)
         pts = np.column_stack([np.asarray(x)[ix], np.asarray(y)[iy]])
         return float(np.mean(self.evaluate(pts)))

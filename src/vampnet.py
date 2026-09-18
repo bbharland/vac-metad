@@ -457,7 +457,7 @@ class SRV:
         """
         return -self.lagtime / np.log(self.eigvals)
 
-    def _transform_features(self, features, batch_size=100_000):
+    def _transform_features(self, features, batch_size=100_000, usetqdm=True):
         """Run features through the float32 network, return a float32 CPU tensor.
 
         Batched so a memmap-backed (or otherwise large) input is never moved to the device in full.  Exact: the net is in eval mode (``BatchNorm1d`` uses stored running statistics, everything else is pointwise), so batching changes no row's output -- which is what lets ``fit`` transform a trajectory once and slice it.
@@ -466,13 +466,21 @@ class SRV:
         module docstring.
         """
         chunks = []
+        num_chunks = -(-len(features) // batch_size)  # ceiling division
+
         with torch.no_grad():
-            for start in range(0, len(features), batch_size):
+            for start in progress(
+                range(0, len(features), batch_size),
+                usetqdm,
+                total=num_chunks,
+                desc="transforming",
+            ):
                 # torch.tensor always copies, so a read-only memmap slice is
                 # fine here -- no intermediate .copy() needed.
                 batch = features[start : start + batch_size]
                 z = self.net(torch.tensor(batch, dtype=torch.float32, device=self.device))
                 chunks.append(z.cpu())
+
         return torch.cat(chunks, dim=0)
 
     def _solve(
@@ -505,16 +513,16 @@ class SRV:
         self.eigvals = eigvals.cpu().numpy()
         self.transform_matrix = transform_matrix.cpu().numpy()
 
-    def fit(self, dataset, epsilon=EPSILON, mode: str = "trunc"):
+    def fit(self, dataset, epsilon=EPSILON, mode="trunc", usetqdm=True):
         assert isinstance(dataset, TimeLaggedDataset), f"ERROR: {type(dataset) = }"
         if isinstance(dataset, TrajectoryDataset):
             # x and y are offset views of one trajectory: transform it once,
             # then slice.  Exact because the eval-mode net is row-wise.
-            z = self._transform_features(dataset.trajectory)
+            z = self._transform_features(dataset.trajectory, usetqdm=usetqdm)
             x, y = z[: -dataset.lagframes], z[dataset.lagframes :]
         else:
-            x = self._transform_features(dataset.x)
-            y = self._transform_features(dataset.y)
+            x = self._transform_features(dataset.x, usetqdm=usetqdm)
+            y = self._transform_features(dataset.y, usetqdm=usetqdm)
         mean, c0, c1 = cov_matrices(x, y)
         self._solve(mean, c0, c1, epsilon=epsilon, mode=mode)
         return self
@@ -558,21 +566,25 @@ class WeightedSRV(SRV):
     def __init__(self, net, lagtime):
         super().__init__(net, lagtime)
 
-    def fit(self, dataset, epsilon: float = EPSILON, mode: str = "trunc"):
-        assert isinstance(
-            dataset, WeightedTimeLaggedDataset
-        ), f"ERROR with {type(dataset) = }"
+    def fit(self, dataset, epsilon=EPSILON, mode="trunc", usetqdm=True):
+        assert isinstance(dataset, WeightedTimeLaggedDataset), (
+            f"ERROR with {type(dataset) = }"
+        )
         if isinstance(dataset, WeightedTrajectoryDataset):
             # x and y are offset views of one trajectory: transform it once,
             # then slice.  Exact because the eval-mode net is row-wise.
-            z = self._transform_features(dataset.trajectory)
+            z = self._transform_features(dataset.trajectory, usetqdm=usetqdm)
             x, y = z[: -dataset.lagframes], z[dataset.lagframes :]
         else:
-            x = self._transform_features(dataset.x)
-            y = self._transform_features(dataset.y)
+            x = self._transform_features(dataset.x, usetqdm=usetqdm)
+            y = self._transform_features(dataset.y, usetqdm=usetqdm)
 
-        xweights = torch.tensor(dataset.xweights)
-        yweights = torch.tensor(dataset.yweights)
+        # No dtype: preserve the arrays' float64.  Narrowing reweighting factors
+        # to float32 quantises them by ~6e-8 relative, which propagates to ~2e-7
+        # in c0 -- the same order as the accumulation error the float64 policy
+        # exists to remove.
+        xweights = torch.tensor(dataset.xweights, dtype=None)
+        yweights = torch.tensor(dataset.yweights, dtype=None)
         mean, c0, c1 = cov_matrices_weighted(x, xweights, y, yweights)
         self._solve(mean, c0, c1, epsilon=epsilon, mode=mode)
         return self

@@ -288,7 +288,9 @@ class VAMPNet:
     """
 
     def __init__(self, net, device, learning_rate, loss_method):
-        assert loss_method in ("vamp1", "vamp2"), f"Invalid loss method {loss_method}"
+        if loss_method not in ("vamp1", "vamp2"):
+            raise ValueError(f"Invalid loss method {loss_method}")
+
         self.net = net.to(device=device).float()
         self.device = device
         self.optim = torch.optim.Adam(params=self.net.parameters(), lr=learning_rate)
@@ -514,7 +516,11 @@ class SRV:
         self.transform_matrix = transform_matrix.cpu().numpy()
 
     def fit(self, dataset, epsilon=EPSILON, mode="trunc", usetqdm=True):
-        assert isinstance(dataset, TimeLaggedDataset), f"ERROR: {type(dataset) = }"
+        if not isinstance(dataset, TimeLaggedDataset):
+            raise TypeError(
+                f"dataset must be a TimeLaggedDataset (or TrajectoryDataset), "
+                f"got {type(dataset).__name__}"
+            )
         if isinstance(dataset, TrajectoryDataset):
             # x and y are offset views of one trajectory: transform it once,
             # then slice.  Exact because the eval-mode net is row-wise.
@@ -533,6 +539,12 @@ class SRV:
         A deep copy of the feature network is used so that moving the returned
         module to CPU does NOT mutate ``self.net`` (which may live on the GPU).
         """
+        if num_cvs < 1:
+            raise ValueError(f"num_cvs must be at least 1, got {num_cvs}")
+
+        if self.transform_matrix is None:
+            raise RuntimeError("srv_net() requires a fitted SRV; call fit() first.")
+
         if self.rank is not None and num_cvs > self.rank:
             raise ValueError(
                 f"num_cvs={num_cvs} exceeds the resolvable rank of c0 "
@@ -567,9 +579,11 @@ class WeightedSRV(SRV):
         super().__init__(net, lagtime)
 
     def fit(self, dataset, epsilon=EPSILON, mode="trunc", usetqdm=True):
-        assert isinstance(dataset, WeightedTimeLaggedDataset), (
-            f"ERROR with {type(dataset) = }"
-        )
+        if not isinstance(dataset, WeightedTimeLaggedDataset):
+            raise TypeError(
+                f"dataset must be a WeightedTimeLaggedDataset (or "
+                f"WeightedTrajectoryDataset), got {type(dataset).__name__}"
+            )
         if isinstance(dataset, WeightedTrajectoryDataset):
             # x and y are offset views of one trajectory: transform it once,
             # then slice.  Exact because the eval-mode net is row-wise.

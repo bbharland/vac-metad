@@ -179,7 +179,7 @@ class Metadynamics:
             return self.gaussians(s)
         return self.gaussians[:num_gaussians](s)
 
-    def compressed(self, dist_threshold=1.0, loud=True):
+    def compressed(self, dist_threshold=1.0, usetqdm=True):
         """Return a new Metadynamics with nearby kernels merged.
 
         Same policy params, with the kernel set replaced by the compressed
@@ -187,7 +187,7 @@ class Metadynamics:
         """
         new = Metadynamics(self._betap, self._height, self._width)
         new.gaussians = self.gaussians.compressed(
-            dist_threshold=dist_threshold, loud=loud
+            dist_threshold=dist_threshold, usetqdm=usetqdm
         )
         return new
 

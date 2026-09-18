@@ -72,6 +72,13 @@ def biases_trajectory(
     ValueError
         If ``dispatch`` is not one of the three supported strings.
     """
+    if num_frames is not None and dispatch != "serial":
+        raise NotImplementedError(
+            f"num_frames is only supported by dispatch='serial', not {dispatch!r}. "
+            f"Pass dispatch='serial', or drop num_frames to compute the full "
+            f"trajectory."
+        )
+
     match dispatch:
         case "serial":
             return biases_trajectory_serial(

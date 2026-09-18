@@ -94,7 +94,9 @@ class Gaussian:
 
     def __radd__(self, other):
         # lets sum([...]) work: the seed is the int 0
-        return self if other == 0 else self + other
+        if other is None or (np.isscalar(other) and other == 0):
+            return self
+        return self.__add__(other)
 
     def distance(self, s):
         """Mahalanobis distance from this kernel's center to point ``s``."""
@@ -162,7 +164,9 @@ class Gaussians:
         )
 
     def __radd__(self, other):
-        return self if (other is None or other == 0) else self.__add__(other)
+        if other is None or (np.isscalar(other) and other == 0):
+            return self
+        return self.__add__(other)
 
     def __repr__(self):
         return f"{type(self).__name__}(n={len(self)})"
@@ -473,7 +477,9 @@ class WeightedGaussians(Gaussians):
 
     def __radd__(self, other):
         # None + wg (iterating frames) and 0 + wg (sum())
-        return self if (other is None or other == 0) else self.__add__(other)
+        if other is None or (np.isscalar(other) and other == 0):
+            return self
+        return self.__add__(other)
 
     # ---- compressed: keep it a WeightedGaussians, carry wsum forward ----
     def compressed(self, dist_threshold=1.0, usetqdm=True, renormalize=False):

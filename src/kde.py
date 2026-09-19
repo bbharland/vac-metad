@@ -1,22 +1,10 @@
-"""Backwards-compatible facade over WeightedGaussians.
-
-``KDE`` is Parrinello's KDE representation of p(s):
+"""``KDE`` is Parrinello's KDE representation of p(s):
 Rethinking Metadynamics: From Bias Potentials to Probability Distributions,
 J. Phys. Chem. Lett. 2020, 11, 2731.
 
-All of the machinery -- evaluation, analytic norms, the Z_n estimators, the
-OPES compression, wsum-reweighted addition -- now lives in
-:class:`gaussians.WeightedGaussians`.  This module keeps only the older
-call-site spellings (``savez``, the ``.npz`` suffix check, ``__eq__``) so
-existing notebooks keep working.
+Computational machinery is in gaussians.py.
 
-New code should use WeightedGaussians directly.
-
-NB: p(s) is represented by sums of Gaussians.  Represented as grids over
-(s1, s2) these have analytical norms ~ 1, but not numerical -- especially
-with Silverman's rule of thumb, which gives large widths for eigenfunction
-data.  Be careful with functions that check numerical norms
-(hist2d.grid_norm).
+Merging with kde_attic.py.
 """
 
 import numpy as np
@@ -25,7 +13,7 @@ from .gaussians import WeightedGaussians
 
 
 class KDE(WeightedGaussians):
-    """WeightedGaussians under its original name.  See the module docstring."""
+    """Thin wrapper for WeightedGaussians."""
 
     # ---- persistence: the original spelling --------------------------
     def savez(self, file):

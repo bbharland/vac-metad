@@ -442,8 +442,15 @@ class SRV:
             p.requires_grad = False
 
         self.lagtime = lagtime
+        if not isinstance(self.net[-2], nn.Linear):
+            raise TypeError(
+                f"Expected net[-2] to be the output Linear layer, got "
+                f"{type(self.net[-2]).__name__}.  SRV assumes the network ends "
+                f"with Linear -> Tanh (or other activation function)."
+            )
         self.num_eigvecs = self.net[-2].out_features
         self.device = module_device(self.net)
+
         self.mean = None
         self.transform_matrix = None
         self.eigvals = None

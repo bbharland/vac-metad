@@ -3,12 +3,27 @@
 * **No SciPy dependency.**  All linear algebra now goes through ``torch.linalg``.
 
 * **Float precision policy.**  The network runs in ``float32``; promotion to
-  ``float64`` happens inside ``cov_matrices`` / ``cov_matrices_weighted``, at the boundary where per-frame values become a sum over frames.  That is where
+  ``float64`` happens inside ``cov_matrices`` / ``cov_matrices_weighted``, at
+  the boundary where per-frame values become a sum over frames.  That is where
   precision is actually lost: summing ~1e6 float32 terms costs ~1e-5 relative
   error in ``c0``, which the near-singular whitening then amplifies by the
-  condition number.  This is the weak link in resolving near-singular eigenvalues, not the precision of the 6x6 Koopman matrix into eigh.
+  condition number.  This is the weak link in resolving near-singular
+  eigenvalues, not the precision of the 6x6 Koopman matrix into eigh.
 
-* **Rank-aware whitening.**
+* **Rank-aware whitening.**  ``sym_eig`` takes a ``mode`` deciding what happens
+  to c0 eigenvalues at or below ``EPSILON``: ``trunc`` discards them (accepting
+  rank reduction), ``clamp`` floors them, ``regularize`` reproduces the old
+  ridge behaviour.  All three are nan-proof, unlike the original
+  ``c0 + epsilon*I`` which could invert a negative eigenvalue.  Training uses
+  ``clamp`` (the per-minibatch rank must not jump); the one-off SRV solve uses
+  ``trunc`` (no continuity requirement, and truncation caps the whitening
+  amplification at 1/sqrt(lambda_min) instead of 1/sqrt(epsilon)).
+  ``SRV.rank`` reports how many modes are real.
+
+* **Weighted/unweighted share one implementation.**  ``WeightedVAMPNet``
+  overrides only ``_batch_loss`` and ``loss``; ``WeightedSRV`` only
+  ``_dataset_class`` and ``_covariances``.  Everything else -- the training
+  loop, the transform, the solve -- lives in the base class.
 """
 
 import copy
@@ -20,9 +35,7 @@ import torch.nn as nn
 
 from .dataset import (
     TimeLaggedDataset,
-    TrajectoryDataset,
     WeightedTimeLaggedDataset,
-    WeightedTrajectoryDataset,
 )
 from .util import (
     torch_device,
@@ -39,8 +52,21 @@ from .progress import progress
 # most -- which is what makes an absolute threshold interpretable here.
 EPSILON = 1e-6
 
+
 # How sym_eig handles eigenvalues at or below EPSILON.  See sym_eig.
 SYM_MODES = ("trunc", "clamp", "regularize")
+
+
+# VAMP scores of the Koopman matrix K.  The leading 1 in each loss is the
+# Perron (equilibrium) eigenvalue, restored after mean-subtraction inside
+# cov_matrices removes the trivial mode.
+#
+#   vamp1: loss = -(1 + sum_i |lambda_i|)   the nuclear norm of K
+#   vamp2: loss = -(1 + tr KK')             the squared Frobenius norm
+#
+# Note vamp1 is the nuclear norm, NOT tr K: the two differ whenever any
+# eigenvalue is negative, which is routine with unresolvable modes present.
+SUPPORTED_LOSS_METHODS = ("vamp1", "vamp2")
 
 
 def sym_eig(a: torch.Tensor, epsilon: float = EPSILON, mode: str = "trunc"):
@@ -270,9 +296,7 @@ def _default_num_threads():
 
 class VAMPNet:
     """Optimize the objective function of the Koopman matrix K.
-
-    vamp1: loss = -(1 + tr K),    where the 1 is the Perron eigenvalue
-    vamp2: loss = -(1 + tr KK')
+    See ``SUPPORTED_LOSS_METHODS`` for the two loss definitions.
 
     Pytorch notes:
     --------------
@@ -288,8 +312,11 @@ class VAMPNet:
     """
 
     def __init__(self, net, device, learning_rate, loss_method):
-        if loss_method not in ("vamp1", "vamp2"):
-            raise ValueError(f"Invalid loss method {loss_method}")
+        if loss_method not in SUPPORTED_LOSS_METHODS:
+            raise ValueError(
+                f"Invalid loss method {loss_method!r}; "
+                f"expected one of {SUPPORTED_LOSS_METHODS}"
+            )
 
         self.net = net.to(device=device).float()
         self.device = device
@@ -317,12 +344,9 @@ class VAMPNet:
         ):
             # training
             self.net.train()
-            for x, y in data_loader_train:
+            for batch in data_loader_train:
                 self.optim.zero_grad()
-                loss = self.loss(
-                    self.net(x.to(device=self.device)),
-                    self.net(y.to(device=self.device)),
-                )
+                loss = self._batch_loss(batch)
                 loss.backward()
                 self.optim.step()
                 self._train_scores.append([epoch + 1, (-loss).item()])
@@ -330,59 +354,48 @@ class VAMPNet:
             # validation
             self.net.eval()
             with torch.no_grad():
-                for x, y in data_loader_test:
-                    loss = self.loss(
-                        self.net(x.to(device=self.device)),
-                        self.net(y.to(device=self.device)),
-                    )
+                for batch in data_loader_test:
+                    loss = self._batch_loss(batch)
                     self._test_scores.append([epoch + 1, (-loss).item()])
 
     def loss(self, x: torch.Tensor, y: torch.Tensor):
-        koopman = koopman_matrix(x, y)
+        # the 1 restores the trivial (equilibrium) mode that mean-subtraction
+        # inside cov_matrices removes
+        return -(1 + self._score(koopman_matrix(x, y)))
+
+    def _batch_loss(self, batch):
+        """Unpack one dataloader batch, move it to the device, and score it.
+
+        The only part of the training loop that differs between weighted and
+        unweighted, which is why ``fit`` lives entirely in this class.
+        """
+        x, y = batch
+        return self.loss(
+            self.net(x.to(device=self.device)),
+            self.net(y.to(device=self.device)),
+        )
+
+    def _score(self, koopman):
+        """VAMP score of an already-built Koopman matrix.
+
+        vamp1 is the nuclear norm sum_i |lambda_i|; vamp2 the squared Frobenius
+        norm tr KK'.  Shared by both loss methods -- only the matrix differs.
+        """
         if self.loss_method == "vamp1":
-            vamp_score = torch.linalg.norm(koopman, ord="nuc")
-        else:
-            vamp_score = torch.square(torch.linalg.norm(koopman, ord="fro"))
-        return -(1 + vamp_score)
+            return torch.linalg.norm(koopman, ord="nuc")
+        return torch.square(torch.linalg.norm(koopman, ord="fro"))
 
 
 class WeightedVAMPNet(VAMPNet):
-    def __init__(self, net, device, learning_rate, loss_method):
-        super().__init__(net, device, learning_rate, loss_method)
 
-    def fit(self, data_loader_train, data_loader_test, num_epochs=1, usetqdm=True):
-        for epoch in progress(
-            range(num_epochs),
-            usetqdm,
-            desc="VAMPnet epoch",
-            total=num_epochs,
-            leave=False,
-        ):
-            # training
-            self.net.train()
-            for x, wx, y, wy in data_loader_train:
-                self.optim.zero_grad()
-                loss = self.loss(
-                    self.net(x.to(device=self.device)),
-                    wx.to(device=self.device),
-                    self.net(y.to(device=self.device)),
-                    wy.to(device=self.device),
-                )
-                loss.backward()
-                self.optim.step()
-                self._train_scores.append([epoch + 1, (-loss).item()])
-
-            # validation
-            self.net.eval()
-            with torch.no_grad():
-                for x, wx, y, wy in data_loader_test:
-                    loss = self.loss(
-                        self.net(x.to(device=self.device)),
-                        wx.to(device=self.device),
-                        self.net(y.to(device=self.device)),
-                        wy.to(device=self.device),
-                    )
-                    self._test_scores.append([epoch + 1, (-loss).item()])
+    def _batch_loss(self, batch):
+        x, wx, y, wy = batch
+        return self.loss(
+            self.net(x.to(device=self.device)),
+            wx.to(device=self.device),
+            self.net(y.to(device=self.device)),
+            wy.to(device=self.device),
+        )
 
     def loss(
         self,
@@ -391,12 +404,7 @@ class WeightedVAMPNet(VAMPNet):
         y: torch.Tensor,
         yweights: torch.Tensor,
     ):
-        koopman = koopman_matrix_weighted(x, xweights, y, yweights)
-        if self.loss_method == "vamp1":
-            vamp_score = torch.linalg.norm(koopman, ord="nuc")
-        else:
-            vamp_score = torch.square(torch.linalg.norm(koopman, ord="fro"))
-        return -(1 + vamp_score)
+        return -(1 + self._score(koopman_matrix_weighted(x, xweights, y, yweights)))
 
 
 class SRV:
@@ -408,6 +416,8 @@ class SRV:
         SRV.__call__(features) -> ndarray (n_samples, num_eigvecs)
         srv_net()              -> torch module mapping features -> CVs (CPU)
     """
+    # Dataset type accepted by fit(); WeightedSRV narrows it.
+    _dataset_class = TimeLaggedDataset
 
     def __init__(self, net, lagtime):
         """Parameters
@@ -508,6 +518,14 @@ class SRV:
         eigvals, eigvecs = torch.linalg.eigh(koopman)  # ascending
         eigvals = torch.flip(eigvals, dims=(0,))  # -> descending
         eigvecs = torch.flip(eigvecs, dims=(1,))
+
+        # eigh fixes no sign convention, so psi_i can come back negated between
+        # otherwise identical fits.  Pin it: force each eigenvector's
+        # largest-magnitude component positive.
+        imax = torch.argmax(eigvecs.abs(), dim=0)
+        signs = torch.sign(eigvecs[imax, torch.arange(eigvecs.shape[1])])
+        eigvecs = eigvecs * signs
+
         transform_matrix = inv_sqrt_c0 @ eigvecs
 
         self.rank = int((torch.linalg.eigvalsh(c0) > epsilon).sum())
@@ -515,21 +533,35 @@ class SRV:
         self.eigvals = eigvals.cpu().numpy()
         self.transform_matrix = transform_matrix.cpu().numpy()
 
-    def fit(self, dataset, epsilon=EPSILON, mode="trunc", usetqdm=True):
-        if not isinstance(dataset, TimeLaggedDataset):
-            raise TypeError(
-                f"dataset must be a TimeLaggedDataset (or TrajectoryDataset), "
-                f"got {type(dataset).__name__}"
-            )
-        if isinstance(dataset, TrajectoryDataset):
-            # x and y are offset views of one trajectory: transform it once,
-            # then slice.  Exact because the eval-mode net is row-wise.
+    def _transform_pairs(self, dataset, usetqdm=True):
+        """Transform a dataset's x/y features to float32 CPU tensors.
+
+        For a trajectory-backed dataset (anything carrying ``.trajectory`` and
+        ``.lagframes``), x and y are offset views of one array, so the
+        trajectory is transformed once and then sliced -- roughly half the
+        forward passes.  Exact because the eval-mode net is row-wise; see
+        :meth:`_transform_features`.
+        """
+        if hasattr(dataset, "trajectory"):
             z = self._transform_features(dataset.trajectory, usetqdm=usetqdm)
-            x, y = z[: -dataset.lagframes], z[dataset.lagframes :]
-        else:
-            x = self._transform_features(dataset.x, usetqdm=usetqdm)
-            y = self._transform_features(dataset.y, usetqdm=usetqdm)
-        mean, c0, c1 = cov_matrices(x, y)
+            return z[: -dataset.lagframes], z[dataset.lagframes :]
+        return (
+            self._transform_features(dataset.x, usetqdm=usetqdm),
+            self._transform_features(dataset.y, usetqdm=usetqdm),
+        )
+
+    def _covariances(self, dataset, x, y):
+        """Covariances for this estimator; WeightedSRV adds the weights."""
+        return cov_matrices(x, y)
+
+    def fit(self, dataset, epsilon=EPSILON, mode="trunc", usetqdm=True):
+        if not isinstance(dataset, self._dataset_class):
+            raise TypeError(
+                f"dataset must be a {self._dataset_class.__name__} (or its "
+                f"trajectory subclass), got {type(dataset).__name__}"
+            )
+        x, y = self._transform_pairs(dataset, usetqdm=usetqdm)
+        mean, c0, c1 = self._covariances(dataset, x, y)
         self._solve(mean, c0, c1, epsilon=epsilon, mode=mode)
         return self
 
@@ -575,30 +607,13 @@ class SRV:
 
 
 class WeightedSRV(SRV):
-    def __init__(self, net, lagtime):
-        super().__init__(net, lagtime)
+    _dataset_class = WeightedTimeLaggedDataset
 
-    def fit(self, dataset, epsilon=EPSILON, mode="trunc", usetqdm=True):
-        if not isinstance(dataset, WeightedTimeLaggedDataset):
-            raise TypeError(
-                f"dataset must be a WeightedTimeLaggedDataset (or "
-                f"WeightedTrajectoryDataset), got {type(dataset).__name__}"
-            )
-        if isinstance(dataset, WeightedTrajectoryDataset):
-            # x and y are offset views of one trajectory: transform it once,
-            # then slice.  Exact because the eval-mode net is row-wise.
-            z = self._transform_features(dataset.trajectory, usetqdm=usetqdm)
-            x, y = z[: -dataset.lagframes], z[dataset.lagframes :]
-        else:
-            x = self._transform_features(dataset.x, usetqdm=usetqdm)
-            y = self._transform_features(dataset.y, usetqdm=usetqdm)
-
+    def _covariances(self, dataset, x, y):
         # No dtype: preserve the arrays' float64.  Narrowing reweighting factors
         # to float32 quantises them by ~6e-8 relative, which propagates to ~2e-7
         # in c0 -- the same order as the accumulation error the float64 policy
         # exists to remove.
         xweights = torch.tensor(dataset.xweights, dtype=None)
         yweights = torch.tensor(dataset.yweights, dtype=None)
-        mean, c0, c1 = cov_matrices_weighted(x, xweights, y, yweights)
-        self._solve(mean, c0, c1, epsilon=epsilon, mode=mode)
-        return self
+        return cov_matrices_weighted(x, xweights, y, yweights)

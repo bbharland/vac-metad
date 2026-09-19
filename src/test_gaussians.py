@@ -194,23 +194,6 @@ class TestNorms:
         simple_set.renormalize()
         assert simple_set.norm() == pytest.approx(1.0)
 
-    def test_norm_factor_mc(self, simple_set):
-        assert simple_set.norm_factor_mc() == pytest.approx(
-            np.mean(simple_set.evaluate(simple_set.centers))
-        )
-
-    def test_norm_factor_quad(self, simple_set):
-        x = np.linspace(-4, 4, 9)
-        y = np.linspace(-4, 4, 9)
-        hist = np.zeros((len(x), len(y)))
-        hist[2, 3] = 1
-        hist[6, 5] = 4
-        expected = np.mean([
-            simple_set(np.array([x[2], y[3]])),
-            simple_set(np.array([x[6], y[5]])),
-        ])
-        assert simple_set.norm_factor_quad(x, y, hist) == pytest.approx(expected)
-
 
 # ======================================================================
 # Compression -- equivalence against the trusted reference

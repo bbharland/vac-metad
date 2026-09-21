@@ -259,6 +259,13 @@ class SimulationData(DataHandles):
         self.lagframes = lagframes
         self.lagtime = frametime * lagframes  # tau, assembled once (Eq. I)
 
+    def __repr__(self):
+        return (
+            f"{type(self).__name__}(dir={self.working_dir.name!r}, "
+            f"frametime={self.frametime} ps, lagframes={self.lagframes}, "
+            f"lagtime={self.lagtime} ps)"
+        )
+
     def save_feature_data(self, periodic=True, recalculate=False, pdbfile=None):
         """Compute and save ``dihedrals`` and ``features`` if missing.
 

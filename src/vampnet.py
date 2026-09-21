@@ -66,7 +66,7 @@ SYM_MODES = ("trunc", "clamp", "regularize")
 #
 # Note vamp1 is the nuclear norm, NOT tr K: the two differ whenever any
 # eigenvalue is negative, which is routine with unresolvable modes present.
-SUPPORTED_LOSS_METHODS = ("vamp1", "vamp2")
+LOSS_METHODS = ("vamp1", "vamp2")
 
 
 def sym_eig(a: torch.Tensor, epsilon: float = EPSILON, mode: str = "trunc"):
@@ -296,7 +296,7 @@ def _default_num_threads():
 
 class VAMPNet:
     """Optimize the objective function of the Koopman matrix K.
-    See ``SUPPORTED_LOSS_METHODS`` for the two loss definitions.
+    See ``LOSS_METHODS`` for the two loss definitions.
 
     Pytorch notes:
     --------------
@@ -312,10 +312,10 @@ class VAMPNet:
     """
 
     def __init__(self, net, device, learning_rate, loss_method):
-        if loss_method not in SUPPORTED_LOSS_METHODS:
+        if loss_method not in LOSS_METHODS:
             raise ValueError(
                 f"Invalid loss method {loss_method!r}; "
-                f"expected one of {SUPPORTED_LOSS_METHODS}"
+                f"expected one of {LOSS_METHODS}"
             )
 
         self.net = net.to(device=device).float()

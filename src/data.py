@@ -10,6 +10,7 @@ from openmm import unit
 # Project-specific imports — adjust these to match your package layout.
 from .param import SimulationParameters
 from .DataHandles import DataHandles
+from .grid2d import periodic_grid, periodic_index
 
 
 def simulation_data(p, subdir=None, lagframes=1, mmap_mode=None):
@@ -346,6 +347,8 @@ class SimulationData(DataHandles):
             Defaults to ``self.features``.
         num_cvs : int
             Number of leading eigenfunctions to keep as collective variables.
+            Sets both the columns of ``cvs`` and the outputs of ``srv_net``.
+            Pass ``p.num_cvs`` so the choice is made in one place.
         """
         if features is None:
             features = self.features
@@ -357,7 +360,7 @@ class SimulationData(DataHandles):
             "timescales": srv.timescales(),
             "psi": psi,
             "cvs": psi[:, :num_cvs],
-            "srv_net": srv.srv_net(),  # moves srv.net to the CPU
+            "srv_net": srv.srv_net(num_cvs=num_cvs),  # moves srv.net to the CPU
         }
         srv.net.to(device=srv.device)  # restore before pickling srv
         self.save_and_assign_objects(labels_objects)
@@ -368,7 +371,7 @@ class SimulationData(DataHandles):
         Call after :meth:`save_eigen_data` (or with an SRV whose ``net`` is on
         ``srv.device``, which :meth:`save_eigen_data` leaves it as).
         """
-        theta_grid = np.linspace(-np.pi, np.pi, num_points)
+        theta_grid = periodic_grid(num_points)  # bin centers; edges on +/- pi
 
         feature_grid = feature_grid_over_dihedrals(
             self.features, self.dihedrals, theta_grid
@@ -387,26 +390,27 @@ class SimulationData(DataHandles):
 def feature_grid_over_dihedrals(features, dihedrals, theta_grid):
     """Map one feature vector to each occupied dihedral grid point.
 
+    ``theta_grid`` holds the bin centers from :func:`periodic_grid`.  Each cell
+    stores the feature vector of the FIRST frame (in trajectory order) that
+    falls in it -- a single sample, not an average over the cell.  Angles wrap,
+    so phi = pi and phi = -pi land in the same cell.
+
     Returns
     -------
     np.ndarray
         Shape ``(num_points, num_points, num_features)``; grid points with no
         sampled frame are NaN.
     """
-
-    def grid_index(theta, dtheta):
-        return round((theta + np.pi) / dtheta)
-
     num_points = len(theta_grid)
-    dtheta = theta_grid[1] - theta_grid[0]
-    num_features = features.shape[1]
-    feature_grid = np.full((num_points, num_points, num_features), np.nan)
+    i = periodic_index(dihedrals[:, 0], num_points)
+    j = periodic_index(dihedrals[:, 1], num_points)
 
-    for dihedral, x in zip(dihedrals, features):
-        i = grid_index(dihedral[0], dtheta)
-        j = grid_index(dihedral[1], dtheta)
-        if np.isnan(feature_grid[i, j, 0]):
-            feature_grid[i, j, :] = x
+    # np.unique returns the index of the first occurrence of each cell, which
+    # reproduces the "first frame wins" rule without a Python loop.
+    cells, first = np.unique(i * num_points + j, return_index=True)
+
+    feature_grid = np.full((num_points, num_points, features.shape[1]), np.nan)
+    feature_grid[cells // num_points, cells % num_points] = features[first]
     return feature_grid
 
 

@@ -43,6 +43,48 @@ def grid1d_from_range(range, dx=None, num_points=100):
         return np.linspace(*range, num_points)
 
 
+def periodic_grid(num_points, start=-np.pi, period=2 * np.pi):
+    """Bin CENTERS that tile one period ``[start, start + period)`` exactly.
+
+    Use this, not ``np.linspace(-pi, pi, n)``, for angles.  linspace includes
+    both endpoints, which are the same angle, and when its points are used as
+    bin centers the outer edges land at ``-pi - dx/2`` and ``pi + dx/2``: the
+    first and last bins then cover only half their width inside the domain,
+    and show about half the true density.  Here the bin edges fall exactly on
+    ``start`` and ``start + period``, every bin has width ``period / n``, and
+    no angle is represented twice.
+
+    Paired with :func:`periodic_index` (bin lookup) and :func:`wrap_periodic`
+    (map data into the half-open period before calling :func:`hist2d`).
+    """
+    dx = period / num_points
+    return start + dx * (np.arange(num_points) + 0.5)
+
+
+def wrap_periodic(theta, start=-np.pi, period=2 * np.pi):
+    """Map angles into the half-open period ``[start, start + period)``.
+
+    mdtraj returns dihedrals in ``(-pi, pi]``; wrapping sends ``pi`` to ``-pi``
+    so it lands in the first bin, consistent with :func:`periodic_index`.
+    """
+    return np.mod(np.asarray(theta) - start, period) + start
+
+
+def periodic_index(theta, num_points, start=-np.pi, period=2 * np.pi):
+    """Index of the :func:`periodic_grid` bin containing each angle.
+
+    Wraps around: ``pi`` and ``-pi`` both map to bin 0, and values just outside
+    the period map to the bin at the opposite end.
+    """
+    # Wrap first: computing floor((pi + pi) / dx) directly gives
+    # floor(99.99999...) = 99 in floating point, not 100 -> 0.  The clip covers
+    # np.mod returning exactly `period` for tiny negative offsets.
+    dx = period / num_points
+    t = wrap_periodic(theta, start=start, period=period)
+    idx = np.floor((t - start) / dx).astype(int)
+    return np.clip(idx, 0, num_points - 1)
+
+
 def _compute_row(x_i, y, func):
     """Evaluate ``func(x_i, y_j)`` for every ``y_j`` in ``y`` (one grid row)."""
     return np.array([func(x_i, y_j) for y_j in y])

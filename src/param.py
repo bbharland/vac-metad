@@ -44,6 +44,7 @@ def param_unbiased_vaccuum_parrinello():
         pdb_file=f"{working_dir}/input.ala2.pdb",
         simulation_time=87.5247 * unit.microsecond,
         frametime=100 * unit.picosecond,
+        num_cvs=1,
     )
 
 

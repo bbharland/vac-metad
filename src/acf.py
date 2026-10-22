@@ -319,7 +319,7 @@ def compute_acf_original(u, frametime, num_frames_acf):
 
         Time for FFT call = 0:02.5
         Time for this call = 11:54
-        <|C_FFT(t) - C(t)|> = 1.5e-10
+       <|C_FFT(t) - C(t)|> = 1.5e-10
 
     Parameters
     ----------

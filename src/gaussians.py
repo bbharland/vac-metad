@@ -256,7 +256,7 @@ class Gaussians:
         return float(np.sum(self.norms_kernels()))
 
     def renormalize(self):
-        """Scale heights so the analytical norm is 1.  In place; returns self."""
+        """Scale heights so the analytical norm is 1.  In place (rebinds); returns self."""
         self.heights = self.heights / self.norm()
         return self
 

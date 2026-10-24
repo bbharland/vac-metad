@@ -103,6 +103,10 @@ class DataClass:
             raise TypeError(
                 f"type({key}) = {type(val)}. '{self.__class__.__name__}' supports None, float or ndarray."
             )
+
+        if key in ("file", "allow_pickle"):
+            raise ValueError(f"'{key}' is reserved by np.savez; choose another field name")
+
         return key, val
 
     @classmethod

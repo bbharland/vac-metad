@@ -1,6 +1,7 @@
-import numpy as np
 import functools
 from pathlib import Path
+
+import numpy as np
 
 from .dataclass import DataClass
 from .util import (
@@ -35,14 +36,14 @@ from .util import (
 #   .npz           : a DataClass (None, float or ndarray fields)
 
 
-def cached(where, filename, cls=None):
+def cached(where, filename):
     """Cache a function's return value in where / filename; format set by extension.
 
     where: object with .working_dir (e.g. SimulationData) or a directory path.
     filename: has extension
       .pickle / .pkl : any picklable object
-      .npz           : single dataclass with array/scalar/string fields;
-                       class taken from the return annotation, or cls=
+      .npy           : a single numpy array (ndarray)
+      .npz           : a DataClass (None, float or ndarray fields)
 
     Wrap function to include kwarg:
       calculate=None: load if the file exists, else compute and save.
@@ -55,8 +56,6 @@ def cached(where, filename, cls=None):
         raise ValueError(
             f"cached: unsupported extension {suffix!r} in {filename!r}; "
             f"expected one of {sorted(_FORMATS)}")
-    if cls is not None and suffix != ".npz":
-        raise ValueError("cached: cls= only applies to .npz files")
     save, load = _FORMATS[suffix]
 
     def decorator(func):
@@ -68,7 +67,7 @@ def cached(where, filename, cls=None):
                 result = func(*args, **kwargs)
                 save(file, result)
             else:
-                result = load(file, func, cls)
+                result = load(file)
             return result
         return wrapper
     return decorator
@@ -85,7 +84,7 @@ def _resolve_dir(where):
     return wd
 
 
-# ---- format handlers: save(file, obj), load(file, func, cls) ----
+# ---- format handlers: save(file, obj), load(file) ----
 
 def _save_npy(file, obj):
     if not isinstance(obj, np.ndarray):

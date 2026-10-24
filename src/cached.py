@@ -11,12 +11,15 @@ from .util import (
 
 # ---- usage ----
 
-# Define function
+# Define/wrap function
 
 #   @cached(wd, "acfs.pickle")          # wd is dir or hasattr .working_dir
 #   def compute_acfs(x, y=2):
 #       ...
 #       return acfs
+
+# or, for imported function
+#   compute_acfs = cached(sd, "acfs.pickle")(compute_acfs)
 
 # Call function, calculate= added by the decorator; not passed to function
 

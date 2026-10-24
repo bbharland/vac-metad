@@ -125,25 +125,26 @@ class DataClass:
                 setattr(dc, name, val)
         return dc
 
+    _NONE_KEY = "__none__"
+
     @classmethod
     def from_npz(cls, file):
-        """Load attributes from a .npz archive."""
+        """Load attributes from a .npz archive written by savez."""
         d = {}
         with np.load(file, allow_pickle=False) as z:
             for key in z.files:
+                if key == cls._NONE_KEY:
+                    d.update({k: None for k in z[key].tolist()})
+                    continue
                 val = z[key]
-
-                if isinstance(val, np.ndarray) and val.shape == ():
-                    try:
-                        val = val.item()
-                    except Exception:
-                        val = float(val)
-
-                d[key] = val
+                d[key] = val.item() if val.shape == () else val
         return cls.from_dict(d)
 
     def savez(self, file):
-        np.savez(file, **self.__dict__)
+        """Save to .npz; None fields are recorded by name (no pickling)."""
+        values = {k: v for k, v in self.__dict__.items() if v is not None}
+        nones = [k for k, v in self.__dict__.items() if v is None]
+        np.savez(file, **values, **{self._NONE_KEY: np.array(nones, dtype=str)})
 
     @property
     def attrs(self):

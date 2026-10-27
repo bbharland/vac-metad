@@ -54,10 +54,6 @@ The naive  frametime * ct.sum()  differs in two ways: it is a left Riemann sum
 
 import numpy as np
 from .dataclass import DataClass
-from .util import (
-    save_pickle,
-    load_pickle
-)
 
 
 # --------------------------------------------------------------------------- #
@@ -350,59 +346,6 @@ def compute_acf_original(u, frametime, num_frames_acf):
     return tau, ct
 
 
-def compute_acfs(wd, signals, frametime, num_frames_acf, calculate=True):
-    """Compute (or reload) ACFs for several CVs, cached in wd/'acfs.pickle'.
-
-    Usage:
-        signals = {
-            "CV1": sd.cvs[:, 0],
-            "CV2": sd.cvs[:, 1],
-        }
-        acfs = compute_acfs(sd.working_dir, signals, sd.frametime, num_frames_acf)
-            Compute every ACF, save the dict to 'acfs.pickle' and return it.
-        acfs = compute_acfs(sd.working_dir, signals, sd.frametime, num_frames_acf,
-                            calculate=False)
-            Skip the calculation and load the dict from 'acfs.pickle'.
-
-    Every signal goes through compute_acf with its defaults (kind='linear',
-    bias='unbiased', c_window=5.0).  Dihedrals therefore get the linear
-    Eq. (1), not the circular Eq. (2); call compute_acf_dataclass(...,
-    kind='circular') directly for angles.
-
-    Parameters
-    ----------
-    wd : Path
-        Working directory holding 'acfs.pickle' (typically sd.working_dir).
-    signals : dict[str: array]
-        Label -> CV trajectory, shape (num_frames,).  Labels become the keys
-        of the returned dict (LaTeX strings are fine; they are used as plot
-        legends).
-    frametime : float
-        Time between frames (see compute_acf).  Sets the units of each tau.
-    num_frames_acf : int
-        Number of lags to compute (0 ... num_frames_acf-1).
-    calculate : bool
-        If True, compute and overwrite 'acfs.pickle'.  If False, load it;
-        signals, frametime and num_frames_acf are then ignored, so the cache
-        reflects whatever arguments were used when it was written.
-
-    Returns
-    -------
-    acfs : dict[str: DataClass]
-        Label -> result of compute_acf_dataclass, same keys as signals.
-    """
-    file = wd / "acfs.pickle"
-    if calculate:
-        acfs = {
-            label: compute_acf_dataclass(u, frametime, num_frames_acf)
-            for label, u in signals.items()
-        }
-        save_pickle(file, acfs)
-    else:
-        acfs = load_pickle(file)
-    return acfs
-
-
 def compute_acf_dataclass(*args, **kwargs):
     """Return DataClass with attributes
         tau : float
@@ -431,6 +374,24 @@ def compute_acf_dataclass(*args, **kwargs):
     )
 
 
+def compute_acfs(signals, frametime, num_frames_acf, **kwargs):
+    """ACFs for several CVs.
+
+    signals : dict[str, array or (array, kind)]
+        A bare array is treated as kind='linear'; use (u, 'circular') for
+        angles in radians.
+    kwargs : passed to compute_acf (bias, c_window).
+
+    Returns dict[str, DataClass], same keys as signals.
+    """
+    acfs = {}
+    for label, sig in signals.items():
+        u, kind = sig if isinstance(sig, tuple) else (sig, "linear")
+        acfs[label] = compute_acf_dataclass(
+            u, frametime, num_frames_acf, kind=kind, **kwargs)
+    return acfs
+
+
 def toy_model_acf(taus, coeffs=(0.7, 0.1, 0.1, 0.1), timescales=(1440, 60, 26, 2)):
     """Return computed ACF data for a toy model over grid, 'taus'.
 
@@ -446,6 +407,4 @@ def toy_model_acf(taus, coeffs=(0.7, 0.1, 0.1, 0.1), timescales=(1440, 60, 26, 2
     )
 
 
-def toy_model_acf_resample(acf, taus):
-    """Same toy model as `acf`, re-evaluated on a new tau grid."""
-    return toy_model_acf(taus, coeffs=acf.coeffs, timescales=acf.timescales)
+

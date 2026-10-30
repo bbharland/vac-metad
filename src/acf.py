@@ -392,19 +392,4 @@ def compute_acfs(signals, frametime, num_frames_acf, **kwargs):
     return acfs
 
 
-def toy_model_acf(taus, coeffs=(0.7, 0.1, 0.1, 0.1), timescales=(1440, 60, 26, 2)):
-    """Return computed ACF data for a toy model over grid, 'taus'.
-
-        C(t) = sum_i a_i * exp(-tau / tau_i)
-
-    timescales in ps; coeffs are a_i (= c_i^2), sum to 1 so C(0) = 1."""
-    terms = [a * np.exp(-taus / ti) for a, ti in zip(coeffs, timescales)]
-    return DataClass(
-        timescales=np.array(timescales),
-        coeffs=np.array(coeffs),
-        terms=np.array(terms),
-        ct=np.sum(terms, axis=0),
-    )
-
-
 

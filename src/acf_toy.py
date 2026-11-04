@@ -3,18 +3,33 @@ import numpy as np
 from .dataclass import DataClass
 
 
-def toy_model_acf(taus, coeffs=(0.7, 0.1, 0.1, 0.1), timescales=(1850, 60, 26, 2)):
+DEFAULT_COEFFS = (0.7, 0.1, 0.1, 0.1)
+DEFAULT_TIMESCALES = (1850, 60, 26, 2)
+
+
+def acf_terms(t, coeffs=DEFAULT_COEFFS, timescales=DEFAULT_TIMESCALES):
+    """Return the individual ACF terms, a_i * exp(-t / tau_i), at time(s) t.
+
+    t may be a scalar or a 1D array, in ps. The first axis of the result
+    indexes the terms:
+        scalar t -> shape (n_terms,)
+        1D t     -> shape (n_terms, len(t))
+    """
+    return np.array([a * np.exp(-t / ti) for a, ti in zip(coeffs, timescales)])
+
+
+def toy_model_acf(taus, coeffs=DEFAULT_COEFFS, timescales=DEFAULT_TIMESCALES):
     """Return computed ACF data for a toy model over grid, 'taus'.
 
         C(t) = sum_i a_i * exp(-tau / tau_i)
 
     timescales in ps; coeffs are a_i (= c_i^2), sum to 1 so C(0) = 1.
     """
-    terms = [a * np.exp(-taus / ti) for a, ti in zip(coeffs, timescales)]
+    terms = acf_terms(taus, coeffs, timescales)
     return DataClass(
         timescales=np.array(timescales),
         coeffs=np.array(coeffs),
-        terms=np.array(terms),
+        terms=terms,
         ct=np.sum(terms, axis=0),
     )
 

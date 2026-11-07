@@ -2,13 +2,14 @@ import numpy as np
 from pathlib import Path
 import openmm.unit as unit
 
+from .paths import DATA
 from .util import kT_in_kJ_per_mol
 from .DefaultMixin import DefaultMixin
 
 
 def param_unbiased_reference():
     """3 us simulation, June 12-17, 2026"""
-    return SimulationParameters(working_dir="data/unbiased")
+    return SimulationParameters(working_dir=DATA / "unbiased")
 
 
 def param_unbiased_weighted():
@@ -18,12 +19,12 @@ def param_unbiased_weighted():
     SRV unweighted:  lambda_1 = 1252 ps
     SRV weighted:    lambda_1 = 1579 ps
     """
-    return SimulationParameters(working_dir="data/verify-weighted")
+    return SimulationParameters(working_dir=DATA / "verify-weighted")
 
 
 def param_unbiased_vaccuum():
     """15 us simulation, July 3, 2026"""
-    return SimulationParameters(working_dir="data/vacuum")
+    return SimulationParameters(working_dir=DATA / "vacuum")
 
 
 def param_unbiased_vaccuum_parrinello():
@@ -33,15 +34,14 @@ def param_unbiased_vaccuum_parrinello():
     * 30+ back and forth transitions (C_7eq <=> C_7ax)
     * leaving PBCs on does not cause any problems (check_pbc.py)
     """
-    working_dir = "data/vacuum-parrinello"
-    xtcfile = Path(working_dir) / "traj.xtc"
-    zenodo_xtcfile = Path(working_dir) / "traj_comp.xtc"
+    working_dir = DATA / "vacuum-parrinello"
+    xtcfile = working_dir / "traj.xtc"
     if not xtcfile.exists():
-        Path(xtcfile).symlink_to(zenodo_xtcfile)
+        xtcfile.symlink_to("traj_comp.xtc")   # relative to the link's folder
 
     return SimulationParameters(
         working_dir=working_dir,
-        pdb_file=f"{working_dir}/input.ala2.pdb",
+        pdb_file=str(working_dir / "input.ala2.pdb"),
         simulation_time=87.5247 * unit.microsecond,
         frametime=100 * unit.picosecond,
         num_cvs=1,
@@ -50,17 +50,17 @@ def param_unbiased_vaccuum_parrinello():
 
 def param_unbiased_reference_350():
     """350 ns simulation, ca Apr. 24, 2024"""
-    return SimulationParameters(working_dir="data/unbiased-350")
+    return SimulationParameters(working_dir=DATA / "unbiased-350")
 
 
 def param_datarich_metad():
     """22 ns WTMetaD simulation, extended on Apr. 21, 2025"""
-    return SimulationParametersMetaD(working_dir="data/datarich-metad")
+    return SimulationParametersMetaD(working_dir=DATA / "datarich-metad")
 
 
 def param_datarich_opes():
     """22 ns OPES simulation, extended on Apr. 21, 2025"""
-    return SimulationParametersOPES(working_dir="data/datarich-opes")
+    return SimulationParametersOPES(working_dir=DATA / "datarich-opes")
 
 
 class SimulationParameters(DefaultMixin):
@@ -85,8 +85,8 @@ class SimulationParameters(DefaultMixin):
     """
 
     def __init__(self, **kwargs):
-        self.working_dir = "data"
-        self.pdb_file = "data/ala2_solv.pdb"
+        self.working_dir = DATA
+        self.pdb_file = str(DATA / "ala2_solv.pdb")
         self.simulation_time = 1 * unit.nanosecond
         self.frametime = 1 * unit.picosecond  # Delta t: time between saved frames
         self.temperature = 300 * unit.kelvin

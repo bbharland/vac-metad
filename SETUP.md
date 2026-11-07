@@ -139,6 +139,47 @@ uv add --dev black
 > The `openmm-cuda-13` wheel on PyPI provides the CUDA 13 platform plugin.
 > Substitute `openmm-cuda-12` / `openmmtorch[cuda12]` if you are on a cu12x stack.
 
+## 5b. Make the project an installable package
+
+Code lives in a package folder named after the project, so notebooks
+anywhere in the repo can import it.
+
+```bash
+mkdir vac_metad notebooks
+touch vac_metad/__init__.py
+cat > vac_metad/paths.py << 'EOF'
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+DATA = ROOT / "data"
+EOF
+```
+
+Add a build section to the end of `pyproject.toml`:
+
+```toml
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["vac_metad"]
+```
+
+Install it in editable mode (edits to `vac_metad/` take effect without reinstalling):
+
+```bash
+uv sync
+cd /tmp && ~/work/vac-metad/.venv/bin/python -c "from vac_metad.paths import DATA; print(DATA)"
+```
+
+Layout and imports:
+
+- Main notebooks `1-…ipynb` live in the root. Exploratory notebooks go in `notebooks/` as `1.00-description.ipynb`.
+- Notebooks use `from vac_metad.acf import …` and `from vac_metad.paths import DATA`.
+- Files inside `vac_metad/` use relative imports: `from .acf import …`.
+- In VS Code settings: `"jupyter.notebookFileRoot": "${workspaceFolder}"`.
+
 ---
 
 ## 6. Verify the full GPU stack

@@ -8,6 +8,7 @@ import mdtraj as md
 from openmm import unit
 
 # Project-specific imports — adjust these to match your package layout.
+from .paths import DATA
 from .param import SimulationParameters
 from .DataHandles import DataHandles
 from .grid2d import periodic_grid, periodic_index
@@ -46,7 +47,7 @@ def simulation_data(p, subdir=None, lagframes=1, mmap_mode=None):
         basedir = Path(p.working_dir)
         frametime = p.frametime.value_in_unit(unit.picosecond)
     elif isinstance(p, (str, Path)):
-        basedir = Path(p)
+        basedir = Path(p) if Path(p).is_absolute() else DATA / p
         frametime = 1
     else:
         raise TypeError(f"Cannot build simulation_data from p of type {type(p).__name__}")

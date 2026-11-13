@@ -1,5 +1,7 @@
 import numpy as np
 from scipy.optimize import curve_fit
+from scipy.ndimage import uniform_filter1d
+from scipy.signal import savgol_filter
 
 
 def fit_exponential(x, y, linearize=False):
@@ -83,3 +85,31 @@ def mse(p, q, dx=1):
         The area element = dx (1D) or dx * dy (2D)
     """
     return dx * np.sum((p - q) ** 2)
+
+
+def derivative(t, x, method="central", window=None, polyorder=2, smooth=None):
+    """dx/dt on a regular grid; output has the same length as x.
+
+    method : "central"  - 2nd-order central differences, 2nd-order one-sided ends (np.gradient)
+             "forward"  - (x[i+1]-x[i])/dt, last value copied from the one before
+             "savgol"   - Savitzky-Golay: local polynomial fit over `window` points (odd)
+    smooth : optional odd window, moving average of x before differencing (not used with savgol)
+    """
+    t = np.asarray(t, float); x = np.asarray(x, float)
+    dt = t[1] - t[0]
+    if not np.allclose(np.diff(t), dt, rtol=1e-8, atol=0):
+        raise ValueError("t must be a regular grid")
+    if method == "savgol":
+        if window is None or window % 2 == 0:
+            raise ValueError("savgol needs an odd window")
+        return savgol_filter(x, window, polyorder, deriv=1, delta=dt, mode="interp")
+    if smooth:
+        x = uniform_filter1d(x, smooth, mode="nearest")
+    if method == "central":
+        return np.gradient(x, dt, edge_order=2)
+    if method == "forward":
+        d = np.empty_like(x)
+        d[:-1] = np.diff(x) / dt
+        d[-1] = d[-2]
+        return d
+    raise ValueError(f"unknown method {method!r}")

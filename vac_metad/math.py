@@ -113,3 +113,61 @@ def derivative(t, x, method="central", window=None, polyorder=2, smooth=None):
         d[-1] = d[-2]
         return d
     raise ValueError(f"unknown method {method!r}")
+
+
+def exp_sum(t, coeffs, timescales):
+    """Sum of exponentials, f(t) = sum_i a_i exp(-t / t_i).
+
+    t may be a scalar or an array; coeffs and timescales are sequences of the
+    same length.  Returns an array shaped like t.
+    """
+    t = np.asarray(t, float)
+    a = np.asarray(coeffs, float).reshape((-1,) + (1,) * t.ndim)
+    ts = np.asarray(timescales, float).reshape((-1,) + (1,) * t.ndim)
+    return np.sum(a * np.exp(-t[None] / ts), axis=0)
+
+
+def weighted_linear_fit(x, y, sigma=None, through_origin=False):
+    """Weighted least-squares straight line, y = slope * x + intercept.
+
+    Parameters
+    ----------
+    x, y : 1D arrays
+    sigma : None or array like y
+        1-sigma error of each y.  Weights are 1/sigma^2 and the returned
+        covariance is absolute (not rescaled by the residuals).  If None, all
+        weights are 1 and the covariance is rescaled by the residual variance,
+        as np.polyfit(..., cov=True) does.
+    through_origin : bool
+        Force intercept = 0 (one-parameter fit).
+
+    Returns
+    -------
+    slope, intercept : floats
+    cov : ndarray, shape (2, 2), covariance of (slope, intercept).  With
+        through_origin the intercept row and column are zero.
+    """
+    x, y = np.asarray(x, float), np.asarray(y, float)
+    w = np.ones_like(y) if sigma is None else 1.0 / np.asarray(sigma, float) ** 2
+    X = x[:, None] if through_origin else np.column_stack([x, np.ones_like(x)])
+    A = X.T @ (w[:, None] * X)
+    beta = np.linalg.solve(A, X.T @ (w * y))
+    cov_beta = np.linalg.inv(A)
+    if sigma is None:
+        dof = max(y.size - X.shape[1], 1)
+        cov_beta = cov_beta * np.sum(w * (y - X @ beta) ** 2) / dof
+
+    cov = np.zeros((2, 2))
+    if through_origin:
+        cov[0, 0] = cov_beta[0, 0]
+        return float(beta[0]), 0.0, cov
+    cov[:] = cov_beta
+    return float(beta[0]), float(beta[1]), cov
+
+
+def running_trapezoid(y, dx):
+    """Running cumulative trapezoid integral, I[k] = int_0^{k dx} y, with I[0] = 0."""
+    y = np.asarray(y, float)
+    out = np.zeros_like(y)
+    out[1:] = np.cumsum(0.5 * dx * (y[1:] + y[:-1]))
+    return out

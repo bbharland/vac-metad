@@ -33,6 +33,13 @@ Why angles need more than centering:
     and is real and even for reversible dynamics (the imaginary part is a free
     time-reversal diagnostic, ~ 0 within noise).
 
+NAMING
+------
+    num_frames : number of frames in the simulation trajectory u(t), N.
+                 Sets the statistical error (sigma_C ~ 1/sqrt(N)).
+    num_lags   : number of lags in the computed ACF, C(0) ... C(num_lags-1),
+                 at times t = frametime * arange(num_lags).  num_lags <= num_frames.
+
 ESTIMATOR
 ---------
 C(tau) is computed by the Wiener-Khinchin route in O(N log N):
@@ -53,7 +60,7 @@ The naive  frametime * ct.sum()  differs in two ways: it is a left Riemann sum
 """
 
 import numpy as np
-from .dataclass import DataClass
+from ..dataclass import DataClass
 
 
 # --------------------------------------------------------------------------- #
@@ -73,23 +80,23 @@ def _embed(u, kind):
     raise ValueError("kind must be 'linear' or 'circular'")
 
 
-def _autocov_fft(du, nlags, bias="unbiased"):
+def _autocov_fft(du, num_lags, bias="unbiased"):
     """Unnormalized autocovariance via FFT.
 
     Returns g with g[k] ~ (1/denom) sum_t conj(du_t) du_{t+k}, g[0] = variance.
     Real for real input, complex (Hermitian) for circular input.
     """
-    n = du.shape[0]
-    nlags = int(min(nlags, n))
-    nfft = 1 << (2 * n - 1).bit_length()  # next pow2 >= 2n-1
+    num_frames = du.shape[0]
+    num_lags = int(min(num_lags, num_frames))
+    nfft = 1 << (2 * num_frames - 1).bit_length()  # next pow2 >= 2N-1
     f = np.fft.fft(du, n=nfft)
-    g = np.fft.ifft(f * np.conj(f))[:nlags]  # linear autocorrelation
+    g = np.fft.ifft(f * np.conj(f))[:num_lags]  # linear autocorrelation
     if np.isrealobj(du):
         g = g.real
     if bias == "unbiased":
-        g = g / (n - np.arange(nlags))  # exact # of terms per lag
+        g = g / (num_frames - np.arange(num_lags))  # exact # of terms per lag
     elif bias == "biased":
-        g = g / n
+        g = g / num_frames
     else:
         raise ValueError("bias must be 'unbiased' or 'biased'")
     return g
@@ -121,7 +128,7 @@ def _integrated_time(ct, frametime, c_window=5.0):
 #  Public API
 # --------------------------------------------------------------------------- #
 def compute_acf(
-    u, frametime, num_frames_acf, kind="linear", bias="unbiased", c_window=5.0
+    u, frametime, num_lags, kind="linear", bias="unbiased", c_window=5.0
 ):
     """Centered, normalized autocorrelation function and relaxation time.
 
@@ -137,8 +144,9 @@ def compute_acf(
         the lag time never enters an autocorrelation integral.  (For a CV
         sampled every frame, ``frametime`` is the SimulationData ``frametime``,
         which equals ``lagtime`` only when ``lagframes == 1``.)
-    num_frames_acf : int
-        Number of lags to compute (0 ... num_frames_acf-1).
+    num_lags : int
+        Number of lags to compute (0 ... num_lags-1).  Not the trajectory
+        length: that is num_frames = len(u).
     kind : {'linear', 'circular'}
         'linear' for unbounded CVs (TICA/VAC eigenfunctions, distances, ...);
         'circular' for angles (dihedrals) -- uses Eq. (2).
@@ -153,14 +161,14 @@ def compute_acf(
     -------
     tau : float
         Relaxation time = int_0^infty C(t) dt, Sokal-windowed.
-    ct : ndarray, shape (num_frames_acf,)
+    ct : ndarray, shape (num_lags,)
         Normalized ACF, C(0)=1 (real part for circular input).
     info : dict
         c0 (variance / 1-Rbar^2), window M, tau_int (frames),
         and 'imag' (Hermitian imaginary part) for circular reversibility checks.
     """
     du = _embed(u, kind)
-    g = _autocov_fft(du, num_frames_acf, bias=bias)
+    g = _autocov_fft(du, num_lags, bias=bias)
     c0 = g[0].real if np.iscomplexobj(g) else g[0]
     ct_full = g / c0  # complex if circular
     ct = ct_full.real
@@ -214,7 +222,7 @@ def compute_theta(ct, frametime, ct_err=None):
 def compute_acf_with_errors(
     u,
     frametime,
-    num_frames_acf,
+    num_lags,
     num_blocks=8,
     kind="linear",
     bias="unbiased",
@@ -242,22 +250,23 @@ def compute_acf_with_errors(
         blocks = [np.asarray(b) for b in u]
     else:
         u = np.asarray(u)
-        L = u.size // num_blocks
+        L = u.size // num_blocks  # frames per block
         blocks = [u[i * L : (i + 1) * L] for i in range(num_blocks)]
 
     # Cap the number of lags at the shortest block so every block returns an
     # ACF of the same length (handles short blocks and unequal-length runs).
-    nlags = int(min(num_frames_acf, min(len(b) for b in blocks)))
-    if nlags < num_frames_acf:
+    shortest = min(len(b) for b in blocks)  # num_frames of the shortest block
+    if shortest < num_lags:
         print(
-            f"[warn] reducing num_frames_acf {num_frames_acf} -> {nlags} "
+            f"[warn] reducing num_lags {num_lags} -> {shortest} "
             f"(limited by the shortest block)."
         )
+        num_lags = shortest
 
     cts, taus = [], []
     for b in blocks:
         tau_b, ct_b, _ = compute_acf(
-            b, frametime, nlags, kind=kind, bias=bias, c_window=c_window
+            b, frametime, num_lags, kind=kind, bias=bias, c_window=c_window
         )
         cts.append(ct_b)
         taus.append(tau_b)
@@ -274,8 +283,8 @@ def compute_acf_with_errors(
     # Lags where every block has C<=0 are all-NaN; report NaN there quietly.
     thetas = np.vstack([compute_theta(c, frametime) for c in cts])
     n_ok = np.sum(np.isfinite(thetas), axis=0)
-    theta_mean = np.full(nlags, np.nan)
-    theta_err = np.full(nlags, np.nan)
+    theta_mean = np.full(num_lags, np.nan)
+    theta_err = np.full(num_lags, np.nan)
     enough = n_ok >= 2
     theta_mean[n_ok >= 1] = np.nanmean(thetas[:, n_ok >= 1], axis=0)
     theta_err[enough] = np.nanstd(thetas[:, enough], axis=0, ddof=1) / np.sqrt(
@@ -283,8 +292,8 @@ def compute_acf_with_errors(
     )
 
     return {
-        "lag": np.arange(nlags),
-        "time": frametime * np.arange(nlags),
+        "lag": np.arange(num_lags),
+        "time": frametime * np.arange(num_lags),
         "ct_mean": ct_mean,
         "ct_err": ct_err,
         "theta_mean": theta_mean,
@@ -295,18 +304,18 @@ def compute_acf_with_errors(
     }
 
 
-def sokal_tau_error(tau_int_frames, window, n_frames, frametime=1.0):
+def sokal_tau_error(tau_int_frames, window, num_frames, frametime=1.0):
     """Madras-Sokal 1-sigma error on the integrated time (single trajectory):
         sigma(tau_int) ~ tau_int * sqrt(2 (2M+1) / N).
     Returned in units of `frametime` (default 1.0 -> frames); pass the real
     frametime to get physical time.  Quick analytic estimate; prefer
     block/ensemble SEM when feasible.
     """
-    rel = np.sqrt(2.0 * (2.0 * window + 1.0) / n_frames)
+    rel = np.sqrt(2.0 * (2.0 * window + 1.0) / num_frames)
     return frametime * tau_int_frames * rel
 
 
-def compute_acf_original(u, frametime, num_frames_acf):
+def compute_acf_original(u, frametime, num_lags):
     """Compute autocorrelation function C(t).
 
     June 24, 2026
@@ -323,14 +332,14 @@ def compute_acf_original(u, frametime, num_frames_acf):
         Full trajectory of CV, u(t)
     frametime : float
         Time separating trajectory frames.  Units will match timescale estimate
-    num_frames_acf : int
+    num_lags : int
         How far out to compute ACF (this is expensive).
 
     Return
     ------
     tau : float
         Computed timescale = int_0^infty dt C(t)
-    ct : ndarray with shape (num_frames_acf,)
+    ct : ndarray with shape (num_lags,)
         The autocorrelation function, C(t)
     """
 
@@ -341,17 +350,22 @@ def compute_acf_original(u, frametime, num_frames_acf):
             return np.mean(u[:-frame_acf] * u[frame_acf:])
 
     c0 = acf(u, 0)
-    ct = np.array([acf(u, t) for t in range(num_frames_acf)]) / c0
+    ct = np.array([acf(u, t) for t in range(num_lags)]) / c0
     tau = frametime * np.sum(ct)
     return tau, ct
 
 
-def compute_acf_dataclass(*args, **kwargs):
-    """Return DataClass with attributes
+def compute_acf_dataclass(u, frametime, num_lags, **kwargs):
+    """compute_acf, returned as a DataClass with attributes
+        t : ndarray, shape (num_lags,)
+            Lag times, frametime * arange(num_lags).
+        frametime : float
+        num_frames : int
+            Length of the trajectory u (not the number of lags).
         tau : float
             Relaxation time = int_0^infty C(t) dt, Sokal-windowed, in units
             of frametime.
-        ct : ndarray, shape (num_frames_acf,)
+        ct : ndarray, shape (num_lags,)
             Normalized ACF, C(0)=1 (real part for circular input).
         c0 : float
             Variance (linear) or 1-Rbar^2 (circular).
@@ -359,12 +373,15 @@ def compute_acf_dataclass(*args, **kwargs):
             Sokal window M in frames (stored as float by DataClass).
         tau_int_frames : float
             Integrated time in frames, tau = frametime * tau_int_frames.
-        imag : ndarray, shape (num_frames_acf,)
+        imag : ndarray, shape (num_lags,)
             Imaginary part of C(tau) for circular input (time-reversal
             check, ~0 within noise); zeros for linear input.
     """
-    tau, ct, info = compute_acf(*args, **kwargs)
+    tau, ct, info = compute_acf(u, frametime, num_lags, **kwargs)
     return DataClass(
+        t=frametime * np.arange(ct.size),
+        frametime=frametime,
+        num_frames=len(u),
         tau=tau,
         ct=ct,
         c0=info["c0"],
@@ -374,7 +391,7 @@ def compute_acf_dataclass(*args, **kwargs):
     )
 
 
-def compute_acfs(signals, frametime, num_frames_acf, **kwargs):
+def compute_acfs(signals, frametime, num_lags, **kwargs):
     """ACFs for several CVs.
 
     signals : dict[str, array or (array, kind)]
@@ -388,8 +405,12 @@ def compute_acfs(signals, frametime, num_frames_acf, **kwargs):
     for label, sig in signals.items():
         u, kind = sig if isinstance(sig, tuple) else (sig, "linear")
         acfs[label] = compute_acf_dataclass(
-            u, frametime, num_frames_acf, kind=kind, **kwargs)
+            u, frametime, num_lags, kind=kind, **kwargs)
     return acfs
+
+
+
+
 
 
 

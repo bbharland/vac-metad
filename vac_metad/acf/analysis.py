@@ -4,7 +4,6 @@ from scipy.optimize import curve_fit
 from ..dataclass import DataClass
 from ..math import weighted_linear_fit, running_trapezoid
 
-
 def acf_sigma(acf, noise_factor=1.0):
     """1-sigma error on C(t): ct_err if present, else Bartlett, else None."""
     if getattr(acf, "ct_err", None) is not None:
@@ -175,7 +174,7 @@ def acf_timescales(acf, c_window=5.0, **fit_kwargs):
     DataClass with
         tau_0 : one-frame chord -dt / ln C(dt); approximates -1/C'(0) only
             for dt much shorter than the fastest mode
-        tau_int_sokal : Sokal-windowed integral of C(t)
+        tau_int_sokal : Sokal-windowed integral of C (as in acf.py)
         tau_int_window : the Sokal window, in time units
         tau_int : tail-corrected integral of C (preferred)
         t1 : slowest timescale in u (= tau_exp), from the slow-tail fit
@@ -205,3 +204,79 @@ def acf_timescales(acf, c_window=5.0, **fit_kwargs):
     )
 
 
+def slow_mode_analysis(acf, c_window_R=8.0, split_window=None, **fit_kwargs):
+    """Split C(t) = a_1 exp(-t/t_1) + R(t), R(0) = 1 - a_1, and report
+
+        tau_R = int_0^W R dt / (1 - a_1)        weight-averaged fast timescale
+        gap   = t_1 / tau_R                     spectral gap
+        tau_int = a_1 t_1 + (1 - a_1) tau_R     identity (checked by identity_error)
+
+    W (the R window):
+        split_window = None : Sokal window, smallest W with W >= c_window_R * tau_R(W).
+        split_window = (t_lo, t_hi) : a_1 is refitted on [t_lo, t_hi], just past
+            the fast modes, and W = t_lo.  A slow-fit error da leaks into tau_R as
+            da * W / (1 - a_1), so a short W helps; the local a_1 is also less
+            noisy than the tail a_1.  t_1 still comes from the full tail fit.
+
+    Parameters
+    ----------
+    acf : ACF DataClass (t, ct, frametime, num_frames, optional ct_err)
+    c_window_R : Sokal constant for the R integral (split_window = None only)
+    split_window : None, or (t_lo, t_hi)
+    fit_kwargs : passed to fit_slow_exponential (both fits, apart from t_min, t_max)
+
+    Returns
+    -------
+    DataClass with
+        a1, t1 : slow mode (a1 from the local fit if split_window)
+        a1_tail : a1 from the full tail fit
+        tau_R, R_window : fast timescale and its window W
+        tau_R_resolved : 1.0 if R(dt)/(1 - a_1) > 1/e, else 0.0 (then tau_R ~ dt/2
+            is only an upper bound, gap only a lower bound)
+        gap : t1 / tau_R
+        tau_int : tail-corrected integral of C
+        identity_error : a1 t1 + (1 - a1) tau_R - tau_int
+        t_min, t_max : tail-fit window
+        R : C(t) - a1 exp(-t/t1), on acf.t
+    """
+    fit = fit_slow_exponential(acf, **fit_kwargs)
+    t1 = fit.t1
+    if split_window is None:
+        a1 = fit.a1
+        R = acf.ct - a1 * np.exp(-acf.t / t1)
+    else:
+        t_lo, t_hi = split_window
+        loc_kwargs = {**fit_kwargs, "t_min": t_lo, "t_max": t_hi}
+        loc = fit_slow_exponential(acf, **loc_kwargs)
+        a1 = loc.a1
+        R = acf.ct - a1 * np.exp(-acf.t / loc.t1)
+
+    w = 1.0 - a1
+    if w <= 0.0:
+        tau_R, t_R = np.nan, np.nan
+    else:
+        running = running_trapezoid(R / w, acf.frametime)
+        if split_window is None:
+            M = sokal_window(running, acf.frametime, c_window_R)
+        else:
+            M = int(round(split_window[0] / acf.frametime))
+        tau_R, t_R = float(running[M]), float(acf.t[M])
+    # The trapezoid needs R to survive one frame; otherwise tau_R ~ dt/2.
+    resolved = w > 0.0 and R[1] / w > np.exp(-1.0)
+
+    tau_int = tail_corrected_tau_int(acf, fit.a1, t1, fit.t_max)
+
+    return DataClass(
+        a1=a1,
+        a1_tail=fit.a1,
+        t1=t1,
+        tau_R=tau_R,
+        R_window=t_R,
+        tau_R_resolved=float(resolved),
+        gap=t1 / tau_R,
+        tau_int=tau_int,
+        identity_error=a1 * t1 + w * tau_R - tau_int,
+        t_min=fit.t_min,
+        t_max=fit.t_max,
+        R=R,
+    )

@@ -77,13 +77,12 @@ def cached(where, filename):
 
 
 def _resolve_dir(where):
-    """Working directory from a SimulationData-like object or a path."""
-    if hasattr(where, "working_dir"):
-        wd = Path(where.working_dir)
-    else:
-        wd = Path(where)
-    if not wd.is_dir():
-        raise NotADirectoryError(f"cached: {wd} is not an existing directory")
+    """Working directory from a SimulationData-like object or a path.
+
+    Creates the last folder if missing; its parent must already exist.
+    """
+    wd = Path(where.working_dir) if hasattr(where, "working_dir") else Path(where)
+    wd.mkdir(exist_ok=True)
     return wd
 
 

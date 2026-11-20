@@ -4,6 +4,26 @@ from scipy.optimize import curve_fit, least_squares
 from ..dataclass import DataClass
 from ..math import weighted_linear_fit, running_trapezoid
 
+"""
+See claude/2026.11.acf-analysis/acf.analysis.md
+
+Given an acf DataClass with fields:
+    t, ct : array (num_lags,)               C(t), normalized C(0) = 1
+    frametime : float                       dt (in, say, ps)
+    num_frames : int                        length of full simulation
+    ct_err : (optional) array (num_lags,)   used as sigma in place of Bartlett
+                                            if present
+Usage:
+    ts = acf_timescales(acf)
+    sm = slow_mode_analysis(acf, split_window=(300.0, 1200.0))
+    plot_timescales_slow_mode(acf, ts, sm)
+
+    for n in (2, 3, 4):
+        m = fit_multi_exponential(acf, n, sum_to_one=True)
+        print(n, m.coeffs.round(3), m.timescales.round(1), f"cond={m.cond:.2g}")
+"""
+
+
 def acf_sigma(acf, noise_factor=1.0):
     """1-sigma error on C(t): ct_err if present, else Bartlett, else None."""
     if getattr(acf, "ct_err", None) is not None:

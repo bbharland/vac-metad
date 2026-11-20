@@ -9,29 +9,15 @@ from .util import (
     load_pickle,
 )
 
-# ---- usage ----
+# ---- usage (brief) ----
+# WD = DATA / "toy-model-acf"
 
-# Define/wrap function
+# @cached(WD, "analysis.pickle")
+# def analysis(toy):
+#     return SimpleNamespace(...)
 
-#   @cached(wd, "acfs.pickle")          # wd is dir or hasattr .working_dir
-#   def compute_acfs(x, y=2):
-#       ...
-#       return acfs
-
-# or, for imported function
-#   compute_acfs = cached(sd, "acfs.pickle")(compute_acfs)
-
-# Call function, calculate= added by the decorator; not passed to function
-
-#   compute_acfs(...)                   # None (default): load if the file
-#                                       #   exists, else compute and save
-#   compute_acfs(..., calculate=True)   # always compute and overwrite the
-#                                       #   file (use after changing inputs)
-#   compute_acfs(..., calculate=False)  # always load; FileNotFoundError if
-#                                       #   the file isn't there
-
-# Caution: the cache key is only the file name. Calling again with different
-# arguments silently loads the OLD result unless you pass calculate=True.
+# r = analysis(toy)         # load if the file exists, else compute and save
+# r = analysis(toy, calculate=True)  # force recompute
 
 # Formats (chosen by the file extension):
 #   .pickle / .pkl : any picklable object

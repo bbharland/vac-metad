@@ -1,5 +1,6 @@
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]   # ~/work/vac-metad
+# ROOT = main working directory (one up from source)
+ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
 FIGS = ROOT / "notes/figures"

@@ -3,7 +3,7 @@ import numpy as np
 
 from ..math import running_trapezoid
 from ..acf.analysis import acf_sigma
-from .style import CURVE, REF
+from .style import CURVE, REF, FILL
 
 def plot_acf(ax, ns, acf, time_eigval, num_frames, label=True, xlabel=True):
     t = ns[:num_frames]
@@ -193,3 +193,25 @@ def plot_multi_fits(acf, multi, noise_factor=1.0, t_plot=None):
 
     fig.tight_layout()
     return fig, (ax1, ax2, ax3)
+
+
+def plot_bartlett_draws(b, k_sigma=3.0):
+    """Synthetic ACF draws with the mean and a ±k_sigma Bartlett band.
+
+    b : DataClass from bartlett_draws (t, draws, mean, sigma).
+    Left: linear y.  Right: log y.
+    """
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4), sharex=True)
+    lo, hi = b.mean - k_sigma * b.sigma, b.mean + k_sigma * b.sigma
+    for ax in axes:
+        ax.fill_between(b.t, lo, hi, **FILL, label=rf"$\pm{k_sigma:g}\sigma_C$")
+        ax.plot(b.t, b.draws.T, color="C0", lw=0.5)
+        ax.plot(b.t, b.mean, **REF, label="mean")
+        ax.set_xlabel("t (ps)")
+    axes[0].set_ylabel(r"$\hat C(t)$")
+    axes[0].axhline(0, **REF, ls=":")
+    axes[1].set_yscale("log")
+    axes[1].set_ylim(np.min(b.sigma[1:]) / 10, 1.2)
+    axes[0].legend()
+    fig.tight_layout()
+    return fig, axes
